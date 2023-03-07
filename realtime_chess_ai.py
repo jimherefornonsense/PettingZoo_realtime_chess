@@ -14,6 +14,7 @@ if __name__ == "__main__":
     env = chess.env('ansi')
     # reset the environment
     obs = env.reset()
+    games = 1
     count_down = 400
     
     for agent in env.agent_iter():
@@ -27,9 +28,19 @@ if __name__ == "__main__":
         records by pieces instead of only 2 players the original intention.
         """
         observation, reward, termination, truncation, info = env.last()
+        
+        # Somehow it only terminates until the last opponent piece is captured
         if termination:
             print("Game Over")
+            # Game counter
+            games -= 1
+            if games > 0:
+                obs = env.reset()
+                continue
+            
             break
+        
+        # A piece is captured, it's truncated from alive agents
         if truncation:
             env.step(None)
             continue

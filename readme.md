@@ -1,10 +1,6 @@
-### A PettingZoo environment of realtime chess game for RL training.
-#### It's a modified version of the classic chess game framework on PettingZoo.
+# Realtime Chess Game Environment for Reinforcement Learning Training
 
-This project is an infrastruture setup for the idea of Dr. Tillquist at Chico State: 
+This project is a modified version of the classic chess game framework on PettingZoo, designed for use in training reinforcement learning models. Specifically, it is an infrastructure setup for an idea proposed by Dr. Tillquist at Chico State, which involves evolving decentralized real-time chess strategies.
 
+Please note that there is currently a known bug in the game where, in some instances, the game won't end after checkmate and will continue until all pieces are captured. We are working on fixing this issue.
 
-Evolving Decentralized Real-Time Chess Strategies.
-
-
-P.S. Still fixing a bug where sometimes the game won't end after checkmate, and it keeps going until all the pieces are captured.

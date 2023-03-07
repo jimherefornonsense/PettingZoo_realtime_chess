@@ -221,6 +221,8 @@ class raw_env(AECEnv):
         self.has_reset = True
 
         self.agents = self.possible_agents[:]
+        
+        chess_utils.reset_agent_table()
 
         self.board = chess.Board()
 

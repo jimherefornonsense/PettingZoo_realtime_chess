@@ -372,3 +372,6 @@ def get_observation(orig_board, player):
             result[base + 6].add(dest_square)
 
     return boards_to_ndarray(result)
+
+def reset_agent_table():
+    agents.reset()

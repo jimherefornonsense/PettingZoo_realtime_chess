@@ -38,6 +38,11 @@ def generate_agents():
 
     return agents
 
+def reset():
+    agent_position = {}
+    position_agent = {i: None for i in range(64)}
+    generate_agents()
+
 def _mirror_pos(sub_pos):
     return sub_pos^0x38
     
