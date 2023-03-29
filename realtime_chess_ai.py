@@ -128,9 +128,11 @@ if __name__ == "__main__":
         else:
             print("piece is cooling down")
             decrement_hash_map(hash_map)
+            # action(0)
         
         print(env.render())
         print(type(env.render()))
+        # comment out this line if you dont want to push to database
         post_uuid_to_api(API_URL, tag, TIMER, env.render())
         TIMER += 1
         print()
