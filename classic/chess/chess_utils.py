@@ -1,10 +1,22 @@
-import chess
 import numpy as np
 from . import agents
+from .mini_chess.const import *
+
+class Move:
+    def __init__(self, uci, piece):
+        self.uci = uci
+        self.from_square = (int(uci[1]) - 1) * BOARD_COL + (ord(uci[0]) - ord("a"))
+        self.to_square = (int(uci[3]) - 1) * BOARD_COL + (ord(uci[2]) - ord("a"))
+        self.piece = piece
+        self.promotion = True if self.piece.lower() == "p" and int(uci[3]) == BOARD_ROW else False
+    
+    def __str__(self) -> str:
+        return self.uci
 
 
 def generate_agents():
     return agents.generate_agents()
+
 
 def boards_to_ndarray(boards):
     arr64 = np.array(boards, dtype=np.uint64)
@@ -17,8 +29,8 @@ def boards_to_ndarray(boards):
 
 
 def square_to_coord(s):
-    col = s % 8
-    row = s // 8
+    col = s % BOARD_COL
+    row = s // BOARD_COL
     return (col, row)
 
 
@@ -30,14 +42,6 @@ def diff(c1, c2):
 
 def sign(v):
     return -1 if v < 0 else (1 if v > 0 else 0)
-
-
-def mirror_move(move):
-    return chess.Move(
-        chess.square_mirror(move.from_square),
-        chess.square_mirror(move.to_square),
-        promotion=move.promotion,
-    )
 
 
 def result_to_int(result_str):
@@ -54,17 +58,12 @@ def result_to_int(result_str):
 def get_queen_dir(diff):
     dx, dy = diff
     assert dx == 0 or dy == 0 or abs(dx) == abs(dy)
-    # comment out lines below to make action no. 4 as the non-moving action
-    # magnitude = max(abs(dx), abs(dy)) - 1
     magnitude = max(max(abs(dx), abs(dy)) - 1, 0)
 
-    assert magnitude < 8 and magnitude >= 0
+    assert magnitude < BOARD_COL and magnitude >= 0
     counter = 0
     for x in range(-1, 1 + 1):
         for y in range(-1, 1 + 1):
-            # comment out lines below to make action no. 4 as the non-moving action
-            # if x == 0 and y == 0:
-            #     continue
             if x == sign(dx) and y == sign(dy):
                 return magnitude, counter
             counter += 1
@@ -72,7 +71,6 @@ def get_queen_dir(diff):
 
 
 def get_queen_plane(diff):
-    # NUM_COUNTERS = 8
     NUM_COUNTERS = 9
     mag, counter = get_queen_dir(diff)
     return mag * NUM_COUNTERS + counter
@@ -129,14 +127,14 @@ def get_move_plane(move):
     if is_knight_move(difference):
         return KNIGHT_OFFSET + get_knight_dir(difference)
     else:
-        if move.promotion is not None and move.promotion != chess.QUEEN:
-            return (
-                UNDER_OFFSET
-                + 3 * get_pawn_promotion_move(difference)
-                + get_pawn_promotion_num(move.promotion)
-            )
-        else:
-            return QUEEN_OFFSET + get_queen_plane(difference)
+        # if move.promotion is not None and move.promotion != chess.QUEEN:
+        #     return (
+        #         UNDER_OFFSET
+        #         + 3 * get_pawn_promotion_move(difference)
+        #         + get_pawn_promotion_num(move.promotion)
+        #     )
+        # else:
+        return QUEEN_OFFSET + get_queen_plane(difference)
 
 
 moves_to_actions = {}
@@ -144,24 +142,11 @@ actions_to_moves = {}
 
 
 def action_to_move(board, action, player):
-    base_move = chess.Move.from_uci(actions_to_moves[action])
-    # Non-moving action
-    if base_move.uci() == "0000":
-        return base_move
-
-    base_coord = square_to_coord(base_move.from_square)
-    # mirr_move = mirror_move(base_move) if player else base_move
-    mirr_move = mirror_move(base_move) if player[:1] == 'B' else base_move
-    if mirr_move.promotion == chess.QUEEN:
-        mirr_move.promotion = None
-    if (
-        mirr_move.promotion is None
-        and str(board.piece_at(mirr_move.from_square)).lower() == "p"
-        and base_coord[1] == 6
-    ):
-        mirr_move.promotion = chess.QUEEN
+    uci = actions_to_moves[action]
+    move = Move(uci, board.piece_at(uci[:2]))
     
-    return mirr_move
+    return move
+
 
 def update_position(agent, move):
     """Return the captured piece (agent) or None if no piece is captured
@@ -169,24 +154,24 @@ def update_position(agent, move):
     return agents.update_position(agent, move.from_square, move.to_square)
 
 
-def make_move_mapping(uci_move, cur_pos = None):
+def make_move_mapping(uci_move, board):
     TOTAL = 74
-    move = chess.Move.from_uci(uci_move)
+    move = Move(uci_move, board.piece_at(uci_move[:2]))
     source = move.from_square
     
-    coord = square_to_coord(cur_pos) if cur_pos else square_to_coord(source)
+    coord = square_to_coord(source)
     panel = get_move_plane(move)
-    action = (coord[0] * 8 + coord[1]) * TOTAL + panel
+    action = (coord[1] * BOARD_COL + coord[0]) * TOTAL + panel
 
     moves_to_actions[uci_move] = action
     actions_to_moves[action] = uci_move
 
 
-def legal_moves(orig_board, agent = None):
+def legal_moves(board, agent = None):
     """Returns legal moves.
 
-    action space is a 8x8x74 dimensional array
-    Each of the 8×8
+    action space is a 5x5x74 dimensional array
+    Each of the 5×5
     positions identifies the square from which to “pick up” a piece. The first 57 planes encode
     possible ‘queen moves’ for any piece: a number of squares [1..7] in which the piece will be
     moved, along one of eight relative compass directions {N, NE, E, SE, S, SW, W, NW}. The
@@ -195,37 +180,21 @@ def legal_moves(orig_board, agent = None):
     rook respectively. Other pawn moves or captures from the seventh rank are promoted to a
     queen
     """
-    if orig_board.turn == chess.BLACK:  # white is 1, black is 0
-        board = orig_board.mirror()
-    else:
-        board = orig_board
-
     legal_moves = []
     
-    for move in board.legal_moves:
-        uci_move = move.uci()
+    for move in board.generate_all_moves():
         if not agent:
-            if uci_move in moves_to_actions:
-                legal_moves.append(moves_to_actions[move.uci()])
-            else:
-                make_move_mapping(uci_move)
-                legal_moves.append(moves_to_actions[move.uci()])
+            if move not in moves_to_actions:
+                make_move_mapping(move, board)
+            legal_moves.append(moves_to_actions[move])
         else:
-            if uci_move in moves_to_actions and move.from_square == agents.agent_position[agent]: # Mapping the current piece
-                legal_moves.append(moves_to_actions[move.uci()])
-            else:
-                make_move_mapping(uci_move)
-                if move.from_square == agents.agent_position[agent]:
-                    legal_moves.append(moves_to_actions[move.uci()])
+            if move not in moves_to_actions:
+                make_move_mapping(move, board)
+            move = Move(move, board.piece_at(move[:2]))
+            if move.from_square == agents.agent_position[agent]: # Mapping the current piece
+                legal_moves.append(moves_to_actions[move.uci])
     
     return legal_moves
-
-def add_non_moving_action(agent):
-    """Add non-moving as a valid action to the agent
-    """
-    make_move_mapping("0000", agents.agent_position[agent])
-    
-    return moves_to_actions["0000"]
 
 
 def get_observation(orig_board, player):
