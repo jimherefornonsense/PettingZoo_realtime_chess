@@ -4,3 +4,11 @@ This project is a modified version of the classic chess game framework on Pettin
 
 Please note that there is currently a known bug in the game where, in some instances, the game won't end after checkmate and will continue until all pieces are captured. We are working on fixing this issue.
 
+to run the backend 
+cd into chessBackend
+then in the cli run python manage.py runserver
+
+
+password for the admin for the django backend is 
+username: admin 
+password: admin  

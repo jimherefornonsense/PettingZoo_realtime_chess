@@ -373,8 +373,7 @@ class raw_env(AECEnv):
         if self.render_mode == "human":
             pygame.event.pump()
             pygame.display.update()
-            # self.clock.tick(self.metadata["render_fps"])
-            self.clock.tick(24)
+            self.clock.tick(self.metadata["render_fps"])
         elif self.render_mode == "rgb_array":
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(self.window_surface)), axes=(1, 0, 2)
