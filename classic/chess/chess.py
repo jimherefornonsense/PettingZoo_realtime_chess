@@ -63,9 +63,9 @@ underpromotions for pawn moves or captures in two possible diagonals, to knight,
 rook respectively. Other pawn moves or captures from the seventh rank are promoted to a
 queen.
 
-We instead flatten this into 5×5×74 = 1850 discrete action space.
+We instead flatten this into 5×5×43 = 1075 discrete action space.
 
-You can get back the original (x,y,c) coordinates from the integer action `a` with the following expression: `(a/(5*74), (a/74)%5, a-(x*5+y)*74`
+You can get back the original (x,y,c) coordinates from the integer action `a` with the following expression: `(a/(5*43), (a/43)%5, a-(x*5+y)*43`
 
 ### Rewards
 
@@ -96,6 +96,7 @@ from pettingzoo.utils import wrappers, aec_to_parallel
 from pettingzoo.utils.agent_selector import agent_selector
 
 from . import chess_utils
+from . import screen
 
 from .mini_chess.mini_chess import MiniChess
 from .mini_chess.const import *
@@ -116,20 +117,20 @@ class raw_env(AECEnv):
         "render_modes": ["human", "ansi", "rgb_array"],
         "name": "chess_rt",
         "is_parallelizable": True,
-        "render_fps": 2,
+        "move_time": 4,
     }
 
     def __init__(self, render_mode=None):
         super().__init__()
 
-        self.board = MiniChess(GARDNER_BOARD)
+        self.board = MiniChess(GARDNER_BOARD, self.metadata["move_time"])
 
-        self.agents = chess_utils.generate_agents()
+        self.agents = chess_utils.init_agents()
         self.possible_agents = self.agents[:]
 
         self._agent_selector = agent_selector(self.agents)
 
-        self.action_spaces = {name: spaces.Discrete(BOARD_COL * BOARD_ROW * 74) for name in self.agents}
+        self.action_spaces = {name: spaces.Discrete(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVE) for name in self.agents}
         self.observation_spaces = {
             name: spaces.Dict(
                 {
@@ -137,7 +138,7 @@ class raw_env(AECEnv):
                         low=0, high=1, shape=(BOARD_COL, BOARD_ROW, 111), dtype=bool
                     ),
                     "action_mask": spaces.Box(
-                        low=0, high=1, shape=(BOARD_COL * BOARD_ROW * 74,), dtype=np.int8
+                        low=0, high=1, shape=(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVE,), dtype=np.int8
                     ),
                 }
             )
@@ -158,38 +159,9 @@ class raw_env(AECEnv):
         assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
 
+        self.screen = None
         if self.render_mode in {"human", "rgb_array"}:
-            try:
-                import pygame
-            except ImportError:
-                raise DependencyNotInstalled(
-                    f"pygame is needed for {self.render_mode} rendering, run with `pip install pettingzoo[classic]`"
-                )
-
-            self.BOARD_SIZE = (400, 400)
-            self.window_surface = None
-            self.clock = pygame.time.Clock()
-            self.cell_size = (self.BOARD_SIZE[0] / BOARD_COL, self.BOARD_SIZE[1] / BOARD_ROW)
-
-            bg_name = path.join(path.dirname(__file__), "img/chessboard.png")
-            self.bg_image = pygame.transform.scale(
-                pygame.image.load(bg_name), (self.BOARD_SIZE[0]+240, self.BOARD_SIZE[1]+240)
-            )
-
-            def load_piece(file_name):
-                img_path = path.join(path.dirname(__file__), f"img/{file_name}.png")
-                return pygame.transform.scale(
-                    pygame.image.load(img_path), self.cell_size
-                )
-
-            self.piece_images = {
-                "p": [load_piece("pawn_white"), load_piece("pawn_black")],
-                "n": [load_piece("knight_white"), load_piece("knight_black")],
-                "b": [load_piece("bishop_white"), load_piece("bishop_black")],
-                "r": [load_piece("rook_white"), load_piece("rook_black")],
-                "q": [load_piece("queen_white"), load_piece("queen_black")],
-                "k": [load_piece("king_white"), load_piece("king_black")],
-            }
+            self.screen = screen.Screen(BOARD_COL, BOARD_ROW, chess_utils.generate_agent_map())
 
     def observation_space(self, agent):
         return self.observation_spaces[agent]
@@ -198,7 +170,7 @@ class raw_env(AECEnv):
         return self.action_spaces[agent]
     
     def set_color(self, agent):
-        self.board.cur_color("w" if agent[:1] == 'W' else "b")
+        self.board.cur_color(agent[:1].lower())
 
     def observe(self, agent):
         self.set_color(agent)
@@ -210,7 +182,7 @@ class raw_env(AECEnv):
         
         legal_moves = chess_utils.legal_moves(self.board, agent)
 
-        action_mask = np.zeros(BOARD_COL * BOARD_ROW * 74, "int8")
+        action_mask = np.zeros(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVE, "int8")
         
         for i in legal_moves:
             action_mask[i] = 1
@@ -224,7 +196,7 @@ class raw_env(AECEnv):
         
         chess_utils.reset_agent_table()
 
-        self.board = MiniChess(GARDNER_BOARD)
+        self.board = MiniChess(GARDNER_BOARD, self.metadata["move_time"])
 
         self._agent_selector = agent_selector(self.agents)
         self.agent_selection = self._agent_selector.reset()
@@ -239,6 +211,9 @@ class raw_env(AECEnv):
 
         if self.render_mode == "human":
             self.render()
+            
+    def is_piece_ready(self, agent):
+        return chess_utils.is_piece_ready(agent)
             
     def _reset_next_agent(self):
         agent_idx = self.agents.index(self._last_alive_agent)
@@ -281,14 +256,24 @@ class raw_env(AECEnv):
             return
         
         self._last_alive_agent = self.agent_selection
-        current_agent = self.agent_selection
-        chosen_move = chess_utils.action_to_move(self.board, action, current_agent)
         
-        assert self.board.push(chosen_move.uci) != False
+        if action != None:
+            chosen_move = chess_utils.action_to_move(self.board, action, self.agent_selection)
+            assert self.board.push(chosen_move.uci) != False
+            chess_utils.set_agent_next_pos(self.agent_selection, chosen_move.to_square)
         
-        captured_piece = chess_utils.update_position(current_agent, chosen_move)
-        if captured_piece:
-            self.truncations[captured_piece] = True
+        # Update board to next unit time
+        exec_move = self.board.update_time()
+        if exec_move != None:
+            exec_move = chess_utils.Move(exec_move[0], exec_move[1])
+            captured_piece = chess_utils.update_position(exec_move)
+            
+            if captured_piece:
+                self.truncations[captured_piece] = True
+            
+                last_alive_agent = chess_utils.find_last_alive_agent(captured_piece)
+                if captured_piece == self.action_spaces:
+                    self._last_alive_agent = last_alive_agent
 
         self.board.cur_color("b" if self.agent_selection[:1] == 'W' else "w")
         next_legal_moves = chess_utils.legal_moves(self.board)
@@ -320,7 +305,7 @@ class raw_env(AECEnv):
         self._accumulate_rewards()
 
         # Update board after applying action
-        # next_board = chess_utils.get_observation(self.board, current_agent)
+        # next_board = chess_utils.get_observation(self.board, self.agent_selection)
         # self.board_history = np.dstack(
         #     (next_board[:, :, 7:], self.board_history[:, :, :-13])
         # )
@@ -339,58 +324,15 @@ class raw_env(AECEnv):
         elif self.render_mode == "ansi":
             return str(self.board)
         elif self.render_mode in {"human", "rgb_array"}:
-            return self._render_gui()
+            return self.screen.render(self.render_mode, chess_utils.generate_agent_map(), self.metadata["move_time"])
         else:
             raise ValueError(
                 f"{self.render_mode} is not a valid render mode. Available modes are: {self.metadata['render_modes']}"
             )
 
-    def _render_gui(self):
-        try:
-            import pygame
-        except ImportError:
-            raise DependencyNotInstalled(
-                "pygame is not installed, run `pip install pettingzoo[classic]`"
-            )
-
-        if self.window_surface is None:
-            pygame.init()
-
-            if self.render_mode == "human":
-                pygame.display.init()
-                pygame.display.set_caption("Chess")
-                self.window_surface = pygame.display.set_mode(self.BOARD_SIZE)
-            elif self.render_mode == "rgb_array":
-                self.window_surface = pygame.Surface(self.BOARD_SIZE)
-
-        self.window_surface.blit(self.bg_image, (0, 0), (0,0, self.BOARD_SIZE[0], self.BOARD_SIZE[1]))
-        for x, y, piece in self.board.piece_map():
-            color = 0 if piece.isupper() else 1
-            pos = (x * self.cell_size[0], y * self.cell_size[1])
-            piece_img = self.piece_images[piece.lower()][color]
-            self.window_surface.blit(piece_img, pos)
-
-        if self.render_mode == "human":
-            pygame.event.pump()
-            pygame.display.update()
-            self.clock.tick(self.metadata["render_fps"])
-        elif self.render_mode == "rgb_array":
-            return np.transpose(
-                np.array(pygame.surfarray.pixels3d(self.window_surface)), axes=(1, 0, 2)
-            )
-
     def close(self):
         if self.render_mode == "human":
-            print("bye!")
-            try:
-                import pygame
-                import sys
-            except ImportError:
-                raise DependencyNotInstalled(
-                    "pygame is not installed, run `pip install pettingzoo[classic]`"
-                )
-            pygame.quit()
-            sys.exit()
+            self.screen.close()
     
 # class parallel_env(ParallelEnv):
 #     def __init__(self):

@@ -2,6 +2,8 @@ import numpy as np
 from . import agents
 from .mini_chess.const import *
 
+TOTAL_MOVE = ((BOARD_COL-1) * 8 + 1) + 8 # QUEEN_MOVES + KNIGHT_MOVES
+
 class Move:
     def __init__(self, uci, piece):
         self.uci = uci
@@ -14,8 +16,32 @@ class Move:
         return self.uci
 
 
-def generate_agents():
-    return agents.generate_agents()
+def init_agents():
+    return agents.init_agents()
+
+
+def reset_agent_table():
+    agents.reset()
+
+
+def generate_agent_map():
+    return agents.generate_agent_map()
+
+
+def set_agent_status(agent, status):
+    agents.set_status(agent, status)
+    
+    
+def is_piece_ready(agent):
+    return True if agents.get_status(agent) == agents.Status.IDLE else False
+
+
+def set_agent_next_pos(agent, next_pos):
+    agents.set_next_pos(agent, next_pos)
+    
+    
+def find_last_alive_agent(removed_agent):
+    return agents.find_last_alive(removed_agent)
 
 
 def boards_to_ndarray(boards):
@@ -118,7 +144,7 @@ def get_move_plane(move):
     dest = move.to_square
     difference = diff(square_to_coord(source), square_to_coord(dest))
 
-    QUEEN_MOVES = 56 + 1 # add non-moving action
+    QUEEN_MOVES = 8 * (BOARD_COL-1) + 1 # add non-moving action
     KNIGHT_MOVES = 8
     QUEEN_OFFSET = 0
     KNIGHT_OFFSET = QUEEN_MOVES
@@ -148,20 +174,19 @@ def action_to_move(board, action, player):
     return move
 
 
-def update_position(agent, move):
+def update_position(move):
     """Return the captured piece (agent) or None if no piece is captured
     """
-    return agents.update_position(agent, move.from_square, move.to_square)
+    return agents.update_position(move.from_square, move.to_square, move.piece)
 
 
 def make_move_mapping(uci_move, board):
-    TOTAL = 74
     move = Move(uci_move, board.piece_at(uci_move[:2]))
     source = move.from_square
     
     coord = square_to_coord(source)
     panel = get_move_plane(move)
-    action = (coord[1] * BOARD_COL + coord[0]) * TOTAL + panel
+    action = (coord[1] * BOARD_COL + coord[0]) * TOTAL_MOVE + panel
 
     moves_to_actions[uci_move] = action
     actions_to_moves[action] = uci_move
@@ -191,7 +216,7 @@ def legal_moves(board, agent = None):
             if move not in moves_to_actions:
                 make_move_mapping(move, board)
             move = Move(move, board.piece_at(move[:2]))
-            if move.from_square == agents.agent_position[agent]: # Mapping the current piece
+            if move.from_square == agents.get_pos(agent): # Mapping the current piece
                 legal_moves.append(moves_to_actions[move.uci])
     
     return legal_moves
@@ -341,6 +366,3 @@ def get_observation(orig_board, player):
             result[base + 6].add(dest_square)
 
     return boards_to_ndarray(result)
-
-def reset_agent_table():
-    agents.reset()
