@@ -63,9 +63,9 @@ underpromotions for pawn moves or captures in two possible diagonals, to knight,
 rook respectively. Other pawn moves or captures from the seventh rank are promoted to a
 queen.
 
-We instead flatten this into 5×5×43 = 1075 discrete action space.
+We instead flatten this into 5×5×41 = 1025 discrete action space.
 
-You can get back the original (x,y,c) coordinates from the integer action `a` with the following expression: `(a/(5*43), (a/43)%5, a-(x*5+y)*43`
+You can get back the original (x,y,c) coordinates from the integer action `a` with the following expression: `(a/(5*41), (a/41)%5, a-(x*5+y)*41`
 
 ### Rewards
 
@@ -84,12 +84,9 @@ You can get back the original (x,y,c) coordinates from the integer action `a` wi
 * v0: Initial versions release (1.0.0)
 
 """
-from os import path
-
 import gymnasium
 import numpy as np
 from gymnasium import spaces
-from gymnasium.error import DependencyNotInstalled
 
 from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers, aec_to_parallel
@@ -128,8 +125,10 @@ class raw_env(AECEnv):
         self.possible_agents = self.agents[:]
 
         self._agent_selector = agent_selector(self.agents)
-
-        self.action_spaces = {name: spaces.Discrete(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVE) for name in self.agents}
+        
+        # Codes for all actions and the last code for passing the round
+        self.code_of_passing = BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVES
+        self.action_spaces = {name: spaces.Discrete(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVES + 1) for name in self.agents}
         self.observation_spaces = {
             name: spaces.Dict(
                 {
@@ -137,7 +136,7 @@ class raw_env(AECEnv):
                         low=0, high=1, shape=(BOARD_COL, BOARD_ROW, 111), dtype=bool
                     ),
                     "action_mask": spaces.Box(
-                        low=0, high=1, shape=(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVE,), dtype=np.int8
+                        low=0, high=1, shape=(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVES + 1,), dtype=np.int8
                     ),
                 }
             )
@@ -179,12 +178,13 @@ class raw_env(AECEnv):
         # )
         # observation = np.dstack((observation[:, :, :7], self.board_history))
         
+        action_mask = np.zeros(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVES + 1, "int8")
+       
         legal_moves = chess_utils.legal_moves(self.board, agent)
-
-        action_mask = np.zeros(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVE, "int8")
-        
         for i in legal_moves:
             action_mask[i] = 1
+    
+        action_mask[self.code_of_passing] = 1
 
         return {"observation": None, "action_mask": action_mask}
 
@@ -256,7 +256,7 @@ class raw_env(AECEnv):
         
         self._last_alive_agent = self.agent_selection
         
-        if action != None:
+        if action != self.code_of_passing:
             chosen_move = chess_utils.action_to_move(self.board, action, self.agent_selection)
             assert self.board.push(chosen_move.uci) != False
             chess_utils.set_agent_next_pos(self.agent_selection, chosen_move.to_square)
@@ -269,10 +269,9 @@ class raw_env(AECEnv):
             
             if captured_piece:
                 self.truncations[captured_piece] = True
-            
-                last_alive_agent = chess_utils.find_last_alive_agent(captured_piece)
-                if captured_piece == self.action_spaces:
-                    self._last_alive_agent = last_alive_agent
+
+                if captured_piece == self.agent_selection:
+                    self._last_alive_agent = chess_utils.find_last_alive_agent(captured_piece)
 
         self.board.cur_color("b" if self.agent_selection[:1] == 'W' else "w")
         next_legal_moves = chess_utils.legal_moves(self.board)

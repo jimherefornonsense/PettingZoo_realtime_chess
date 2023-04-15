@@ -17,7 +17,8 @@ if __name__ == "__main__":
     # reset the environment
     obs = env.reset()
     games = 1
-    count_down = 100
+    tick = 0
+    TICK_COUNTDOWN = 200
     
     try:
         # AEC
@@ -64,25 +65,26 @@ if __name__ == "__main__":
                 """
                 # Random choose a valid action
                 action = np.random.choice(valid_actions)
-                col = action//(5*43)
-                row = (action//43)%5
+                col = action//(5*41)
+                row = (action//41)%5
                 print("action index:", action)
                 # The coordination is a subjective perspective to the player side, 
                 # black side's position is mirrored vertically.
-                print("move (x = {}, y = {}, c = {})".format(col, row, action-(col*5+row)*43))
+                print("move (x = {}, y = {}, c = {})".format(col, row, action-(col*5+row)*41))
                 env.step(action)
             else:
-                print("the piece is not ready.")
-                env.step(None)
+                print("code:", env.unwrapped.code_of_passing, ", the piece is not ready.")
+                env.step(env.unwrapped.code_of_passing)
             
             # print("reward:", reward)
     
             if env.unwrapped.render_mode != "human":
                 print(env.render())
+            print("tick:", tick)
             print()
         
-            count_down -= 1
-            if count_down == 0:
+            tick += 1
+            if tick == TICK_COUNTDOWN:
                 break
     
         env.close()

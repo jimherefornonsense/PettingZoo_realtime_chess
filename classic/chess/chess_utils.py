@@ -2,7 +2,7 @@ import numpy as np
 from mini_chess.const import *
 from . import agents
 
-TOTAL_MOVE = ((BOARD_COL-1) * 8 + 1) + 8 # QUEEN_MOVES + KNIGHT_MOVES
+TOTAL_MOVES = ((BOARD_COL-1) * 8 + 1) + 8 # QUEEN_MOVES + KNIGHT_MOVES
 
 class Move:
     def __init__(self, uci, piece):
@@ -90,6 +90,8 @@ def get_queen_dir(diff):
     counter = 0
     for x in range(-1, 1 + 1):
         for y in range(-1, 1 + 1):
+            if magnitude != 0 and (x == 0 and y == 0):
+                continue
             if x == sign(dx) and y == sign(dy):
                 return magnitude, counter
             counter += 1
@@ -97,9 +99,13 @@ def get_queen_dir(diff):
 
 
 def get_queen_plane(diff):
-    NUM_COUNTERS = 9
+    NUM_COUNTERS = 8
+    IDLE_COUNTED = 9
     mag, counter = get_queen_dir(diff)
-    return mag * NUM_COUNTERS + counter
+
+    if mag == 0:
+        return counter
+    return (mag - 1) * NUM_COUNTERS + IDLE_COUNTED + counter
 
 
 def get_knight_dir(diff):
@@ -186,7 +192,7 @@ def make_move_mapping(uci_move, board):
     
     coord = square_to_coord(source)
     panel = get_move_plane(move)
-    action = (coord[1] * BOARD_COL + coord[0]) * TOTAL_MOVE + panel
+    action = (coord[1] * BOARD_COL + coord[0]) * TOTAL_MOVES + panel
 
     moves_to_actions[uci_move] = action
     actions_to_moves[action] = uci_move

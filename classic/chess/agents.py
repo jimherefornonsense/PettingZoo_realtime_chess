@@ -70,7 +70,7 @@ def set_next_pos(agent, next_pos):
     if agent_position[agent]["pos"] != next_pos:
         agent_position[agent]["status"] = Status.MOVING
     agent_position[agent]["pos"] = next_pos
-    
+
 def get_pos(agent):
     if agent not in agent_position or agent_position[agent]["status"] != Status.IDLE:
         return None
@@ -94,6 +94,8 @@ def update_position(from_pos, to_pos, piece):
         if get_status(captured_piece) != Status.MOVING:
             agent_position.pop(captured_piece)
             position_agent[to_pos].popleft()
+        else:
+            captured_piece = None
             
     # Put down the piece
     position_agent[to_pos].append(agent)
