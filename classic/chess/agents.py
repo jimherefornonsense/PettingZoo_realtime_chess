@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from .mini_chess.const import *
+from mini_chess.const import *
 from enum import Enum
 from collections import deque
 

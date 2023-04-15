@@ -1,6 +1,6 @@
 import numpy as np
+from mini_chess.const import *
 from . import agents
-from .mini_chess.const import *
 
 TOTAL_MOVE = ((BOARD_COL-1) * 8 + 1) + 8 # QUEEN_MOVES + KNIGHT_MOVES
 

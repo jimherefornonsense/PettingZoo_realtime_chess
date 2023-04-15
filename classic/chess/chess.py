@@ -98,9 +98,8 @@ from pettingzoo.utils.agent_selector import agent_selector
 from . import chess_utils
 from . import screen
 
-from .mini_chess.mini_chess import MiniChess
-from .mini_chess.const import *
-
+from mini_chess.mini_chess import MiniChess
+from mini_chess.const import *
 
 def env(render_mode=None):
     env = raw_env(render_mode=render_mode)
