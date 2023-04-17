@@ -16,6 +16,7 @@ class Screen:
         self.cell_size = (self.BOARD_SIZE[0] / col, self.BOARD_SIZE[1] / row)
         self.frame_count = 0
 
+        # Loading
         bg_name = path.join(path.dirname(__file__), "img/chessboard.png")
         scale_from_8x8 = (self.BOARD_SIZE[0] + (8-col)*self.cell_size[0], self.BOARD_SIZE[1] + (8-row)*self.cell_size[1])
         self.bg_image = pygame.transform.scale(pygame.image.load(bg_name), scale_from_8x8)
@@ -41,10 +42,12 @@ class Screen:
             file_path = path.join(self.folder_path, filename)
             remove(file_path)
         
-        # Init pieces' positions
+        # Pieces' positions
         self.agent_data = {}
         self.agent_next_pos = {}
+        self.init_board(agent_map)
         
+    def init_board(self, agent_map):
         for x, y, agent in agent_map:
             color = 0 if agent[:1] == "W" else 1
             piece = agent[2:3]
@@ -56,6 +59,13 @@ class Screen:
             
             self.agent_data[agent] = {"img": piece_img, "rect": rect, "dx": 0.0, "dy": 0.0}
             self.agent_next_pos[agent] = coord
+    
+    def reset(self, agent_map):
+        self.agent_data.clear()
+        self.agent_next_pos.clear()
+        # self.frame_count = 0
+
+        self.init_board(agent_map)
     
     def coord_map(self, x, y):
         y = self.row - y - 1 

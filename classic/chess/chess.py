@@ -26,7 +26,7 @@ Chess is one of the oldest studied games in AI. Our implementation of the observ
 
 ### Observation Space
 
-The observation is a dictionary which contains an `'observation'` element which is the usual RL observation described below, and an  `'action_mask'` which holds the legal moves, described in the Legal Actions Mask section.
+The observation is a dictionary which contains an `'observation'` element which is the usual RL observation described below, and an `'action_mask'` which holds the legal moves, described in the Legal Actions Mask section.
 
 Like AlphaZero, the main observation space is an 8x8 image representing the board. It has 20 channels representing:
 
@@ -93,10 +93,11 @@ from pettingzoo.utils import wrappers, aec_to_parallel
 from pettingzoo.utils.agent_selector import agent_selector
 
 from . import chess_utils
+from . import agents
 from . import screen
 
 from mini_chess.mini_chess import MiniChess
-from mini_chess.const import *
+from .consts import *
 
 def env(render_mode=None):
     env = raw_env(render_mode=render_mode)
@@ -113,22 +114,22 @@ class raw_env(AECEnv):
         "render_modes": ["human", "ansi", "rgb_array"],
         "name": "chess_rt",
         "is_parallelizable": True,
-        "move_time": 4,
     }
 
     def __init__(self, render_mode=None):
         super().__init__()
 
-        self.board = MiniChess(GARDNER_BOARD, self.metadata["move_time"])
+        self.board = MiniChess(BOARD[:], MOVE_TIME)
 
-        self.agents = chess_utils.init_agents()
+        self.agent_table = agents.Agents()
+        self.agents = self.agent_table.get_list()
         self.possible_agents = self.agents[:]
 
         self._agent_selector = agent_selector(self.agents)
         
         # Codes for all actions and the last code for passing the round
-        self.code_of_passing = BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVES
-        self.action_spaces = {name: spaces.Discrete(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVES + 1) for name in self.agents}
+        self.code_of_passing = BOARD_COL * BOARD_ROW * TOTAL_MOVES
+        self.action_spaces = {name: spaces.Discrete(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1) for name in self.agents}
         self.observation_spaces = {
             name: spaces.Dict(
                 {
@@ -136,7 +137,7 @@ class raw_env(AECEnv):
                         low=0, high=1, shape=(BOARD_COL, BOARD_ROW, 111), dtype=bool
                     ),
                     "action_mask": spaces.Box(
-                        low=0, high=1, shape=(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVES + 1,), dtype=np.int8
+                        low=0, high=1, shape=(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1,), dtype=np.int8
                     ),
                 }
             )
@@ -159,7 +160,7 @@ class raw_env(AECEnv):
 
         self.screen = None
         if self.render_mode in {"human", "rgb_array"}:
-            self.screen = screen.Screen(BOARD_COL, BOARD_ROW, chess_utils.generate_agent_map())
+            self.screen = screen.Screen(BOARD_COL, BOARD_ROW, self.agent_table.generate_agent_map())
 
     def observation_space(self, agent):
         return self.observation_spaces[agent]
@@ -178,9 +179,9 @@ class raw_env(AECEnv):
         # )
         # observation = np.dstack((observation[:, :, :7], self.board_history))
         
-        action_mask = np.zeros(BOARD_COL * BOARD_ROW * chess_utils.TOTAL_MOVES + 1, "int8")
-       
-        legal_moves = chess_utils.legal_moves(self.board, agent)
+        action_mask = np.zeros(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1, "int8")
+        
+        legal_moves = chess_utils.legal_moves(self.board, self.agent_table.get_pos(agent))
         for i in legal_moves:
             action_mask[i] = 1
     
@@ -191,12 +192,11 @@ class raw_env(AECEnv):
     def reset(self, seed=None, return_info=False, options=None):
         self.has_reset = True
 
-        self.agents = self.possible_agents[:]
+        self.agent_table.reset()
+        self.agents = self.agent_table.get_list()
+
+        self.board = MiniChess(BOARD[:], MOVE_TIME)
         
-        chess_utils.reset_agent_table()
-
-        self.board = MiniChess(GARDNER_BOARD, self.metadata["move_time"])
-
         self._agent_selector = agent_selector(self.agents)
         self.agent_selection = self._agent_selector.reset()
 
@@ -206,13 +206,14 @@ class raw_env(AECEnv):
         self.truncations = {name: False for name in self.agents}
         self.infos = {name: {} for name in self.agents}
 
-        self.board_history = np.zeros((8, 8, 104), dtype=bool)
+        self.board_history = np.zeros((BOARD_COL, BOARD_ROW, 104), dtype=bool)
 
         if self.render_mode == "human":
+            self.screen.reset(self.agent_table.generate_agent_map())
             self.render()
             
     def is_piece_ready(self, agent):
-        return chess_utils.is_piece_ready(agent)
+        return True if self.agent_table.get_status(agent) == agents.Status.IDLE else False
             
     def _reset_next_agent(self):
         agent_idx = self.agents.index(self._last_alive_agent)
@@ -228,6 +229,19 @@ class raw_env(AECEnv):
             result_coef = 1 if i == 0 else -1
             self.rewards[name] = result_val * result_coef
             self.infos[name] = {"legal_moves": []}
+
+    def update_state(self):
+        self.agent_table.update_time()
+        exec_move = self.board.update_time()
+        if exec_move != None:
+            exec_move = chess_utils.Move(exec_move[0], exec_move[1])
+            captured_piece = self.agent_table.update_position(exec_move.from_square, exec_move.to_square, exec_move.piece)
+            
+            if captured_piece:
+                self.truncations[captured_piece] = True
+
+                if captured_piece == self.agent_selection:
+                    self._last_alive_agent = self.agent_table.find_last_alive(captured_piece)
 
     def step(self, action):
         if (
@@ -257,26 +271,17 @@ class raw_env(AECEnv):
         self._last_alive_agent = self.agent_selection
         
         if action != self.code_of_passing:
-            chosen_move = chess_utils.action_to_move(self.board, action, self.agent_selection)
+            chosen_move = chess_utils.action_to_move(self.board, action)
             assert self.board.push(chosen_move.uci) != False
-            chess_utils.set_agent_next_pos(self.agent_selection, chosen_move.to_square)
+            self.agent_table.set_next_pos(self.agent_selection, chosen_move.to_square)
         
         # Update board to next unit time
-        exec_move = self.board.update_time()
-        if exec_move != None:
-            exec_move = chess_utils.Move(exec_move[0], exec_move[1])
-            captured_piece = chess_utils.update_position(exec_move)
-            
-            if captured_piece:
-                self.truncations[captured_piece] = True
+        self.update_state()
 
-                if captured_piece == self.agent_selection:
-                    self._last_alive_agent = chess_utils.find_last_alive_agent(captured_piece)
-
-        self.board.cur_color("b" if self.agent_selection[:1] == 'W' else "w")
-        next_legal_moves = chess_utils.legal_moves(self.board)
+        # self.board.cur_color("b" if self.agent_selection[:1] == 'W' else "w")
+        # next_legal_moves = chess_utils.legal_moves(self.board)
         
-        if not any(next_legal_moves):
+        if self.board.has_won():
             result_val = chess_utils.result_to_int("1-0")
             self.set_game_result(result_val)
         
@@ -322,7 +327,7 @@ class raw_env(AECEnv):
         elif self.render_mode == "ansi":
             return str(self.board)
         elif self.render_mode in {"human", "rgb_array"}:
-            return self.screen.render(self.render_mode, chess_utils.generate_agent_map(), self.metadata["move_time"])
+            return self.screen.render(self.render_mode, self.agent_table.generate_agent_map(), MOVE_TIME)
         else:
             raise ValueError(
                 f"{self.render_mode} is not a valid render mode. Available modes are: {self.metadata['render_modes']}"

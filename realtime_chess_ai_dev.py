@@ -9,6 +9,8 @@ Created on Mon Feb 27 14:03:57 2023
 import classic.chess_rt as chess
 import numpy as np
 
+GAME_COUNTDOWN = 5
+TICK_COUNTDOWN = 100
 
 # This is for dev purpose.
 if __name__ == "__main__":
@@ -16,9 +18,8 @@ if __name__ == "__main__":
     env = chess.env('human')
     # reset the environment
     obs = env.reset()
-    games = 1
+    game = 0
     tick = 0
-    TICK_COUNTDOWN = 200
     
     try:
         # AEC
@@ -36,10 +37,11 @@ if __name__ == "__main__":
             
             # Only terminate when one side has no piece left
             if termination:
-                print("Game Over")
-                # Game counter
-                games -= 1
-                if games > 0:
+                print("Game", game, "Over")
+                game += 1
+                if game < GAME_COUNTDOWN:
+                    print()
+                    tick = 0
                     obs = env.reset()
                     continue
                 break
@@ -48,12 +50,7 @@ if __name__ == "__main__":
                 env.step(None)
                 continue
             
-            """
-            TODO: Cool down mechanism
-            
-            Could use the api of KungFu chess or implement it ourself.
-            """
-            # Pieces only be ready to move when its status is stale
+            # Pieces only be ready to move when its status is idle
             if env.unwrapped.is_piece_ready(agent):
                 # Filter out invalid actions
                 valid_actions = np.where(np.array(observation["action_mask"]) == 1)[0]
@@ -73,7 +70,7 @@ if __name__ == "__main__":
                 print("move (x = {}, y = {}, c = {})".format(col, row, action-(col*5+row)*41))
                 env.step(action)
             else:
-                print("code:", env.unwrapped.code_of_passing, ", the piece is not ready.")
+                print("the piece is not ready.")
                 env.step(env.unwrapped.code_of_passing)
             
             # print("reward:", reward)
@@ -85,7 +82,7 @@ if __name__ == "__main__":
         
             tick += 1
             if tick == TICK_COUNTDOWN:
-                break
+                env.unwrapped.set_game_result(1)
     
         env.close()
    

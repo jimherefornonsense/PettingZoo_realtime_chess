@@ -1,131 +1,139 @@
 # -*- coding: utf-8 -*-
-from mini_chess.const import *
+from .consts import *
 from enum import Enum
 from collections import deque
-
-CHESS_PIECES = ("R0", "N0", "B0", "Q", "K", "B1", "N1", "R1", "P0", "P1", "P2", "P3", "P4", "P5", "P6", "P7")
-MINI_CHESS_PIECES = ("R", "N", "B", "Q", "K", "P0", "P1", "P2", "P3", "P4")
 
 class Status(Enum):
     IDLE = 0
     MOVING = 1
     COOLING = 2
 
-agent_order = []
-# agent-position dict, positions are subjective to agent side
-agent_position = {}
-# position-agent dict
-position_agent = {i: deque() for i in range(BOARD_COL * BOARD_ROW)}
-
-def init_agents():
-    agents = []
-
-    # All white pieces go first
-    # for i, piece in enumerate(CHESS_PIECES):
-    #     w_piece = "W_"+piece
-    #     agents.append(w_piece)
-    #     agent_position[w_piece] = i
-    #     position_agent[i] = w_piece
+class Agents:
+    def __init__(self):
+        self.tick = 0
+        # an agent order list, agents could be deleted by the env when truncating them
+        self._agent_order = []
+        # agent-position dict, positions are subjective to agent side
+        self._agent_position = {}
+        # position-agent dict
+        self._position_agent = {}
         
-    # for i, piece in enumerate(CHESS_PIECES):
-    #     b_piece = "B_"+piece
-    #     agents.append(b_piece)
-    #     agent_position[b_piece] = i
-    #     position_agent[_mirror_pos(i)] = b_piece
-    
-    # White and black pieces interchange
-    for i, piece in enumerate(MINI_CHESS_PIECES):        
-        w_piece = "W_"+piece
-        b_piece = "B_"+piece
-        agents.append(w_piece)
-        agents.append(b_piece)
-        agent_order.append(w_piece)
-        agent_order.append(b_piece)
+        self.init_agents()
+
+    def init_agents(self):
+        for i in range(BOARD_COL * BOARD_ROW):
+            self._position_agent[i] = deque()
         
-        agent_position[w_piece] = {"pos": i, "status": Status.IDLE}
-        agent_position[b_piece] = {"pos": i, "status": Status.IDLE}
+        # White and black pieces interchange
+        for i, piece in enumerate(BOARD_PIECES):
+            w_piece = "W_"+piece
+            b_piece = "B_"+piece
 
-        position_agent[i].clear()
-        position_agent[_mirror_pos(i)].clear()
-        position_agent[i].append(w_piece)
-        position_agent[_mirror_pos(i)].append(b_piece)
-
-    return agents
-
-def reset():
-    agent_position = {}
-    init_agents()
-
-def _mirror_pos(sub_pos):
-    # return sub_pos^0x38
-    return (BOARD_ROW - sub_pos // BOARD_COL - 1) * BOARD_COL + sub_pos % BOARD_COL
-
-def set_status(agent, status):
-    agent_position[agent]["status"] = status
-
-def get_status(agent):
-    return agent_position[agent]["status"]
-
-def set_next_pos(agent, next_pos):
-    if agent_position[agent]["pos"] != next_pos:
-        agent_position[agent]["status"] = Status.MOVING
-    agent_position[agent]["pos"] = next_pos
-
-def get_pos(agent):
-    if agent not in agent_position or agent_position[agent]["status"] != Status.IDLE:
-        return None
-    return agent_position[agent]["pos"]
-
-def update_position(from_pos, to_pos, piece):
-    if from_pos == to_pos:
-        return None
-    if piece.islower():
-        from_pos = _mirror_pos(from_pos)
-        to_pos = _mirror_pos(to_pos)
-    
-    # Take up the piece
-    agent = position_agent[from_pos].popleft()
-
-    # Check target square
-    captured_piece = None
-    if len(position_agent[to_pos]) != 0:
-        captured_piece = position_agent[to_pos][0]
-        # Only remove the piece if the piece isn't moving
-        if get_status(captured_piece) != Status.MOVING:
-            agent_position.pop(captured_piece)
-            position_agent[to_pos].popleft()
-        else:
-            captured_piece = None
+            self._agent_order.append(w_piece)
+            self._agent_order.append(b_piece)
             
-    # Put down the piece
-    position_agent[to_pos].append(agent)
-    agent_position[agent]["status"] = Status.IDLE
-    
-    return captured_piece
+            self._agent_position[w_piece] = {"pos": i, "status": Status.IDLE, "cooldown_end": 0}
+            self._agent_position[b_piece] = {"pos": i, "status": Status.IDLE, "cooldown_end": 0}
 
-def find_last_alive(removed_agent):
-    i = agent_order.index(removed_agent)
-    agent_order.remove(removed_agent)
-    
-    return agent_order[i-1]
+            self._position_agent[i].append(w_piece)
+            self._position_agent[self._mirror_pos(i)].append(b_piece)
 
-def generate_agent_map():
-    moving_agent = []
+    def get_list(self):
+        return self._agent_order
+
+    def reset(self):
+        self.tick = 0
+        self._agent_order.clear()
+        self._agent_position.clear()
+        self._position_agent.clear()
+
+        self.init_agents()
+
+    def _mirror_pos(self, sub_pos):
+        # return sub_pos^0x38
+        return (BOARD_ROW - sub_pos // BOARD_COL - 1) * BOARD_COL + sub_pos % BOARD_COL
+
+    def get_status(self, agent):
+        if (self._agent_position[agent]["status"] == Status.COOLING 
+            and self._agent_position[agent]["cooldown_end"] <= self.tick):
+            self.set_idle(agent)
+
+        return self._agent_position[agent]["status"]
+
+    def set_idle(self, agent):
+        self._agent_position[agent]["status"] = Status.IDLE
     
-    for agent, data in agent_position.items():
-        pos = data["pos"]
-        if agent[:1] == "B":
-            pos = _mirror_pos(pos)
+    def set_moving(self, agent):
+        self._agent_position[agent]["status"] = Status.MOVING
+
+    def set_cooldown(self, agent):
+        self._agent_position[agent]["status"] = Status.COOLING
+        self._agent_position[agent]["cooldown_end"] = self.tick + COOLDOWN_TIME
+
+    def set_next_pos(self, agent, next_pos):
+        if self._agent_position[agent]["pos"] != next_pos:
+            self.set_moving(agent)
+        self._agent_position[agent]["pos"] = next_pos
+
+    def get_pos(self, agent):
+        if agent not in self._agent_position or self.get_status(agent) == Status.MOVING:
+            return None
+        return self._agent_position[agent]["pos"]
+
+    def update_time(self):
+        self.tick += 1
+
+    def update_position(self, from_pos, to_pos, piece):
+        """Return the captured piece (agent) or None if no piece is captured"""
+        if from_pos == to_pos:
+            return None
+        if piece.islower():
+            from_pos = self._mirror_pos(from_pos)
+            to_pos = self._mirror_pos(to_pos)
         
-        x = pos % BOARD_COL
-        y = pos // BOARD_COL
+        # Take up the piece
+        agent = self._position_agent[from_pos].popleft()
+
+        # Check target square
+        captured_piece = None
+        if len(self._position_agent[to_pos]) != 0:
+            captured_piece = self._position_agent[to_pos][0]
+            # Only remove the piece if the piece isn't moving
+            if self.get_status(captured_piece) != Status.MOVING:
+                self._agent_position.pop(captured_piece)
+                self._position_agent[to_pos].popleft()
+            else:
+                captured_piece = None
+                
+        # Put down the piece
+        self._position_agent[to_pos].append(agent)
+        self.set_cooldown(agent)
         
-        if data["status"] == Status.MOVING:
-            moving_agent.append((x, y, agent))
-        else:
+        return captured_piece
+
+    def find_last_alive(self, removed_agent):
+        i = self._agent_order.index(removed_agent)
+        # self._agent_order.remove(removed_agent)
+        
+        return self._agent_order[i-1]
+
+    def generate_agent_map(self):
+        moving_agent = []
+        
+        for agent, data in self._agent_position.items():
+            pos = data["pos"]
+            if agent[:1] == "B":
+                pos = self._mirror_pos(pos)
+            
+            x = pos % BOARD_COL
+            y = pos // BOARD_COL
+            
+            if data["status"] == Status.MOVING:
+                moving_agent.append((x, y, agent))
+            else:
+                yield x, y, agent
+                
+        # Place moving pieces in the end to ensure their image layers are higher
+        for x, y, agent in moving_agent:
             yield x, y, agent
-            
-    # Place moving pieces in the end to ensure their image layers are higher
-    for x, y, agent in moving_agent:
-        yield x, y, agent
-    
+        

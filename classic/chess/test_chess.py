@@ -3,22 +3,6 @@ import numpy as np
 
 from . import chess_utils
 
-def test_minichess():
-    from mini_chess.mini_chess import MiniChess
-    from mini_chess.const import GARDNER_BOARD
-    board = [
-        ".....",
-        ".....",
-        ".....",
-        ".....",
-        "...k.",
-        ]
-    a = MiniChess(board)
-    a.cur_color("b")
-    print(list(a.generate_all_moves()))
-    print("end")
-test_minichess()
-
 def assert_asserts(x):
     try:
         x()

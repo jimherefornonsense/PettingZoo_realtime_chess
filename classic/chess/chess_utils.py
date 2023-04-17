@@ -1,8 +1,5 @@
 import numpy as np
-from mini_chess.const import *
-from . import agents
-
-TOTAL_MOVES = ((BOARD_COL-1) * 8 + 1) + 8 # QUEEN_MOVES + KNIGHT_MOVES
+from .consts import *
 
 class Move:
     def __init__(self, uci, piece):
@@ -14,34 +11,6 @@ class Move:
     
     def __str__(self) -> str:
         return self.uci
-
-
-def init_agents():
-    return agents.init_agents()
-
-
-def reset_agent_table():
-    agents.reset()
-
-
-def generate_agent_map():
-    return agents.generate_agent_map()
-
-
-def set_agent_status(agent, status):
-    agents.set_status(agent, status)
-    
-    
-def is_piece_ready(agent):
-    return True if agents.get_status(agent) == agents.Status.IDLE else False
-
-
-def set_agent_next_pos(agent, next_pos):
-    agents.set_next_pos(agent, next_pos)
-    
-    
-def find_last_alive_agent(removed_agent):
-    return agents.find_last_alive(removed_agent)
 
 
 def boards_to_ndarray(boards):
@@ -173,17 +142,11 @@ moves_to_actions = {}
 actions_to_moves = {}
 
 
-def action_to_move(board, action, player):
+def action_to_move(board, action):
     uci = actions_to_moves[action]
     move = Move(uci, board.piece_at(uci[:2]))
     
     return move
-
-
-def update_position(move):
-    """Return the captured piece (agent) or None if no piece is captured
-    """
-    return agents.update_position(move.from_square, move.to_square, move.piece)
 
 
 def make_move_mapping(uci_move, board):
@@ -198,7 +161,7 @@ def make_move_mapping(uci_move, board):
     actions_to_moves[action] = uci_move
 
 
-def legal_moves(board, agent = None):
+def legal_moves(board, agent_pos = None):
     """Returns legal moves.
 
     action space is a 5x5x74 dimensional array
@@ -214,7 +177,7 @@ def legal_moves(board, agent = None):
     legal_moves = []
     
     for move in board.generate_all_moves():
-        if not agent:
+        if agent_pos == None:
             if move not in moves_to_actions:
                 make_move_mapping(move, board)
             legal_moves.append(moves_to_actions[move])
@@ -222,7 +185,7 @@ def legal_moves(board, agent = None):
             if move not in moves_to_actions:
                 make_move_mapping(move, board)
             move = Move(move, board.piece_at(move[:2]))
-            if move.from_square == agents.get_pos(agent): # Mapping the current piece
+            if move.from_square == agent_pos: # Mapping the current piece
                 legal_moves.append(moves_to_actions[move.uci])
     
     return legal_moves
