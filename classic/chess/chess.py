@@ -65,7 +65,7 @@ queen.
 
 We instead flatten this into 5×5×41 = 1025 discrete action space.
 
-You can get back the original (x,y,c) coordinates from the integer action `a` with the following expression: `(a/(5*41), (a/41)%5, a-(x*5+y)*41`
+You can get back the original (x,y,c) coordinates from the integer action `a` with the following expression: `(a/41)%5, (a/(5*41), a-(y*5+x)*41`
 
 ### Rewards
 
@@ -89,7 +89,8 @@ import numpy as np
 from gymnasium import spaces
 
 from pettingzoo import AECEnv
-from pettingzoo.utils import wrappers, aec_to_parallel
+from pettingzoo.utils.conversions import aec_to_parallel_wrapper
+from pettingzoo.utils import wrappers
 from pettingzoo.utils.agent_selector import agent_selector
 
 from . import chess_utils
@@ -104,7 +105,7 @@ def env(render_mode=None):
     env = wrappers.TerminateIllegalWrapper(env, illegal_reward=-1)
     env = wrappers.AssertOutOfBoundsWrapper(env)
     env = wrappers.OrderEnforcingWrapper(env)
-    # env = aec_to_parallel(env)
+    # env = parellel_wrapper(env)
     return env
 
 
@@ -150,8 +151,6 @@ class raw_env(AECEnv):
         self.terminations = {name: False for name in self.agents}
 
         self.agent_selection = None
-        self._last_alive_agent = None
-        self._dead_step_initializer = None
         
         self.board_history = np.zeros((BOARD_COL, BOARD_ROW, 104), dtype=bool)
 
@@ -168,11 +167,11 @@ class raw_env(AECEnv):
     def action_space(self, agent):
         return self.action_spaces[agent]
     
-    def set_color(self, agent):
+    def _set_color(self, agent):
         self.board.cur_color(agent[:1].lower())
 
     def observe(self, agent):
-        self.set_color(agent)
+        self._set_color(agent)
         
         # observation = chess_utils.get_observation(
         #     self.board, 1 if agent[:1] == 'B' else 0
@@ -181,11 +180,13 @@ class raw_env(AECEnv):
         
         action_mask = np.zeros(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1, "int8")
         
-        legal_moves = chess_utils.legal_moves(self.board, self.agent_table.get_pos(agent))
-        for i in legal_moves:
-            action_mask[i] = 1
-    
-        action_mask[self.code_of_passing] = 1
+        if not self.agent_table.is_captured(agent):
+            if self._is_piece_ready(agent):
+                legal_moves = chess_utils.legal_moves(self.board, self.agent_table.get_pos(agent))
+                for i in legal_moves:
+                    action_mask[i] = 1
+            else: 
+                action_mask[self.code_of_passing] = 1
 
         return {"observation": None, "action_mask": action_mask}
 
@@ -212,63 +213,54 @@ class raw_env(AECEnv):
             self.screen.reset(self.agent_table.generate_agent_map())
             self.render()
             
-    def is_piece_ready(self, agent):
+    def _is_piece_ready(self, agent):
         return True if self.agent_table.get_status(agent) == agents.Status.IDLE else False
-            
-    def _reset_next_agent(self):
-        agent_idx = self.agents.index(self._last_alive_agent)
-        self._agent_selector._current_agent = agent_idx+1
-    
-    def _sync_next_agent(self):
-        self._reset_next_agent()
-        self.agent_selection = self._agent_selector.next()
 
-    def set_game_result(self, result_val):
-        for i, name in enumerate(self.agents):
-            self.terminations[name] = True
-            result_coef = 1 if i == 0 else -1
-            self.rewards[name] = result_val * result_coef
-            self.infos[name] = {"legal_moves": []}
-
-    def update_state(self):
+    def _update_state(self):
         self.agent_table.update_time()
         exec_move = self.board.update_time()
         if exec_move != None:
             exec_move = chess_utils.Move(exec_move[0], exec_move[1])
-            captured_piece = self.agent_table.update_position(exec_move.from_square, exec_move.to_square, exec_move.piece)
+            agent, captured_agent = self.agent_table.update_position(exec_move.from_square, exec_move.to_square, exec_move.piece)
             
-            if captured_piece:
-                self.truncations[captured_piece] = True
+            if captured_agent:
+                self._reward_capturing(agent, captured_agent)
 
-                if captured_piece == self.agent_selection:
-                    self._last_alive_agent = self.agent_table.find_last_alive(captured_piece)
+    def _reward_capturing(self, agent, captured_agent):
+        coef = 1 if agent[:1] != captured_agent[:1] else -1
+        captured_piece = captured_agent[2:3]
+        reward = 0
+
+        if captured_piece == "P":
+            reward = 1            
+        elif captured_piece == "N":
+            reward = 3
+        elif captured_piece == "R" or captured_piece == "B":
+            reward = 5
+        elif captured_piece == "Q":
+            reward = 7
+        elif captured_piece == "K":
+            reward = 9
+
+        self.rewards[agent] = reward * coef
+        self.truncations[captured_agent] = True
+
+    def _reward_winning(self, color):
+        for agent in self.agents:
+            self.terminations[agent] = True
+            if agent[:1] == color:
+                self.rewards[agent] = 10
+                # self.infos[name] = {"legal_moves": []}
 
     def step(self, action):
         if (
             self.terminations[self.agent_selection]
             or self.truncations[self.agent_selection]
         ):
-            # In order to fit the mechanism of the env, which will gather all dead 
-            # agents and delete them each but then it still loops back to the first 
-            # deleted dead agent and causes KeyError, the checking point is to 
-            # ensure to skip the deleted agent and loop for the next alive agent.
-            #
-            # It's a hecky way to make the env to fit the need of the realtime 
-            # chess without modifying the source code.
-            if not self._dead_step_initializer:
-                self._dead_step_initializer = self.agent_selection
-                
+            self.agent_selection = self._agent_selector.next()
             print("Agent is dead")
             print()
-            self._was_dead_step(action)
-            
-            if self._dead_step_initializer == self.agent_selection:
-                self._sync_next_agent()
-                self._dead_step_initializer = None
-                
             return
-        
-        self._last_alive_agent = self.agent_selection
         
         if action != self.code_of_passing:
             chosen_move = chess_utils.action_to_move(self.board, action)
@@ -276,14 +268,13 @@ class raw_env(AECEnv):
             self.agent_table.set_next_pos(self.agent_selection, chosen_move.to_square)
         
         # Update board to next unit time
-        self.update_state()
+        self._update_state()
 
         # self.board.cur_color("b" if self.agent_selection[:1] == 'W' else "w")
         # next_legal_moves = chess_utils.legal_moves(self.board)
         
         if self.board.has_won():
-            result_val = chess_utils.result_to_int("1-0")
-            self.set_game_result(result_val)
+            self._reward_winning(self.agent_selection[:1])
         
         # is_stale_or_checkmate = not any(next_legal_moves)
         
@@ -295,17 +286,13 @@ class raw_env(AECEnv):
         # is_claimable_draw = is_repetition or is_50_move_rule
         # game_over = is_claimable_draw or is_stale_or_checkmate
 
-        """
-        TODO: Reward structure
-        
-        When a piece captures a piece the other side, gives rewards.
-        """
         # if game_over:
             # result = self.board.result(claim_draw=True)
             # result_val = chess_utils.result_to_int(result)
             # self.set_game_result(result_val)
 
         self._accumulate_rewards()
+        self.rewards = {name: 0 for name in self.agents}
 
         # Update board after applying action
         # next_board = chess_utils.get_observation(self.board, self.agent_selection)
@@ -336,22 +323,57 @@ class raw_env(AECEnv):
     def close(self):
         if self.render_mode == "human":
             self.screen.close()
-    
-# class parallel_env(ParallelEnv):
-#     def __init__(self):
-#         pass
 
-#     def reset(self, seed=None, return_info=False, options=None):
-#         pass
-    
-#     def step(self, actions):
-#         pass
-    
-#     def render(self):
-#         pass
-    
-#     def observation_space(self, agent):
-#         return self.observation_spaces[agent]
-    
-#     def action_space(self, agent):
-#         return self.action_spaces[agent]
+
+from collections import defaultdict, deque
+
+class parellel_wrapper(aec_to_parallel_wrapper):
+    def step(self, actions):
+        rewards = defaultdict(int)
+        terminations = {}
+        truncations = {}
+        infos = {}
+        observations = {}
+        visited = set()
+
+        self.aec_env._has_updated = True
+        for agent in self.aec_env.agent_iter():
+            observation, reward, termination, truncation, info = self.aec_env.last()
+            terminations[agent] = termination
+            truncations[agent] = truncation
+            infos[agent] = info
+            
+            if termination:
+                break
+
+            if truncation:
+                self.aec_env.step(None)
+                visited.add(agent)
+                continue
+
+            if agent in visited:
+                break
+            visited.add(agent)
+
+            # Check if action is valid still
+            if not observation["action_mask"][actions[agent]]:
+                valid_actions = np.where(np.array(observation["action_mask"]) == 1)[0]
+                for action in valid_actions:
+                    col = (action//41)%5
+                    row = action//(5*41)
+                    c = action-(row*5+col)*41
+                    if c == 4:
+                        actions[agent] = action
+                        break
+
+            self.aec_env.step(actions[agent])
+            
+            for agent in self.aec_env.agents:
+                rewards[agent] += self.aec_env.rewards[agent]
+
+        observations = {
+            agent: self.aec_env.observe(agent) for agent in self.aec_env.agents
+        }
+
+        self.agents = self.aec_env.agents
+        return observations, rewards, terminations, truncations, infos

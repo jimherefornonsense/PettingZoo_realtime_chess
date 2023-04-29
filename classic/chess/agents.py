@@ -11,7 +11,7 @@ class Status(Enum):
 class Agents:
     def __init__(self):
         self.tick = 0
-        # an agent order list, agents could be deleted by the env when truncating them
+        # an agent order list
         self._agent_order = []
         # agent-position dict, positions are subjective to agent side
         self._agent_position = {}
@@ -51,7 +51,7 @@ class Agents:
 
     def _mirror_pos(self, sub_pos):
         # return sub_pos^0x38
-        return (BOARD_ROW - sub_pos // BOARD_COL - 1) * BOARD_COL + sub_pos % BOARD_COL
+        return (BOARD_ROW - 1 - sub_pos // BOARD_COL) * BOARD_COL + sub_pos % BOARD_COL
 
     def get_status(self, agent):
         if (self._agent_position[agent]["status"] == Status.COOLING 
@@ -76,9 +76,12 @@ class Agents:
         self._agent_position[agent]["pos"] = next_pos
 
     def get_pos(self, agent):
-        if agent not in self._agent_position or self.get_status(agent) == Status.MOVING:
+        if self.get_status(agent) == Status.MOVING:
             return None
         return self._agent_position[agent]["pos"]
+    
+    def is_captured(self, agent):
+        return agent not in self._agent_position
 
     def update_time(self):
         self.tick += 1
@@ -95,27 +98,22 @@ class Agents:
         agent = self._position_agent[from_pos].popleft()
 
         # Check target square
-        captured_piece = None
+        captured_agent = None
         if len(self._position_agent[to_pos]) != 0:
-            captured_piece = self._position_agent[to_pos][0]
+            last_idx = len(self._position_agent[to_pos]) - 1
+            captured_agent = self._position_agent[to_pos][last_idx]
             # Only remove the piece if the piece isn't moving
-            if self.get_status(captured_piece) != Status.MOVING:
-                self._agent_position.pop(captured_piece)
-                self._position_agent[to_pos].popleft()
+            if self.get_status(captured_agent) != Status.MOVING:
+                self._agent_position.pop(captured_agent)
+                self._position_agent[to_pos].pop()
             else:
-                captured_piece = None
+                captured_agent = None
                 
         # Put down the piece
         self._position_agent[to_pos].append(agent)
         self.set_cooldown(agent)
         
-        return captured_piece
-
-    def find_last_alive(self, removed_agent):
-        i = self._agent_order.index(removed_agent)
-        # self._agent_order.remove(removed_agent)
-        
-        return self._agent_order[i-1]
+        return agent, captured_agent
 
     def generate_agent_map(self):
         moving_agent = []

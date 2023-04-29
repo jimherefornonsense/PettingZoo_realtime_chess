@@ -39,17 +39,6 @@ def sign(v):
     return -1 if v < 0 else (1 if v > 0 else 0)
 
 
-def result_to_int(result_str):
-    if result_str == "1-0":
-        return 1
-    elif result_str == "0-1":
-        return -1
-    elif result_str == "1/2-1/2":
-        return 0
-    else:
-        assert False, "bad result"
-
-
 def get_queen_dir(diff):
     dx, dy = diff
     assert dx == 0 or dy == 0 or abs(dx) == abs(dy)

@@ -25,7 +25,6 @@ if __name__ == "__main__":
         # AEC
         for agent in env.agent_iter():
             print("this is the agent", agent)
-            env.unwrapped.set_color(agent)
             """
             TODO: Understand observation["observation"]
             
@@ -50,28 +49,23 @@ if __name__ == "__main__":
                 env.step(None)
                 continue
             
-            # Pieces only be ready to move when its status is idle
-            if env.unwrapped.is_piece_ready(agent):
-                # Filter out invalid actions
-                valid_actions = np.where(np.array(observation["action_mask"]) == 1)[0]
-                """
-                TODO: Model training
-                
-                Machine learning part should replace the following line to choose an 
-                action itself.
-                """
-                # Random choose a valid action
-                action = np.random.choice(valid_actions)
-                col = action//(5*41)
-                row = (action//41)%5
-                print("action index:", action)
-                # The coordination is a subjective perspective to the player side, 
-                # black side's position is mirrored vertically.
-                print("move (x = {}, y = {}, c = {})".format(col, row, action-(col*5+row)*41))
-                env.step(action)
-            else:
-                print("the piece is not ready.")
-                env.step(env.unwrapped.code_of_passing)
+            # Filter out invalid actions
+            valid_actions = np.where(np.array(observation["action_mask"]) == 1)[0]
+            """
+            TODO: Model training
+            
+            Machine learning part should replace the following line to choose an 
+            action itself.
+            """
+            # Random choose a valid action
+            action = np.random.choice(valid_actions)
+            col = (action//41)%5
+            row = action//(5*41)
+            print("action index:", action)
+            # The coordination is a subjective perspective to the player side, 
+            # black side's position is mirrored vertically.
+            print("move (x = {}, y = {}, c = {})".format(col, row, action-(row*5+col)*41))
+            env.step(action)
             
             # print("reward:", reward)
     
@@ -82,7 +76,14 @@ if __name__ == "__main__":
         
             tick += 1
             if tick == TICK_COUNTDOWN:
-                env.unwrapped.set_game_result(1)
+                print("Game", game, "Over")
+                game += 1
+                if game < GAME_COUNTDOWN:
+                    print()
+                    tick = 0
+                    obs = env.reset()
+                    continue
+                break
     
         env.close()
    
@@ -90,41 +91,56 @@ if __name__ == "__main__":
         env.close()
     
     # Parallel
-    # while env.agents:
-    #     actions = {}
-    #     for agent in env.agents:
-    #         """
-    #         TODO: Cool down mechanism
+    # try:
+    #     while env.agents:
+    #         actions = {}
+    #         for agent in env.agents:
+    #             print(agent)
+    #             # Filter out invalid actions
+    #             valid_actions = np.where(np.array(obs[agent]["action_mask"]) == 1)[0]
+    #             """
+    #             TODO: Model training
+                
+    #             Machine learning part should replace the following line to choose an 
+    #             action itself.
+    #             """
+    #             action = None
+    #             if len(valid_actions) > 0:
+    #                 # Random choose a valid action
+    #                 action = np.random.choice(valid_actions)
+    #                 col = (action//41)%5
+    #                 row = action//(5*41)
+    #                 print("action index:", action)
+    #                 # The coordination is a subjective perspective to the player side, 
+    #                 # black side's position is mirrored vertically.
+    #                 print("move (x = {}, y = {}, c = {})".format(col, row, action-(row*5+col)*41))
+                
+    #             actions[agent] = action
             
-    #         Could use the api of KungFu chess or implement it ourself.
-    #         """
-    #         # Filter out invalid actions
-    #         valid_actions = np.where(np.array(obs[agent]["action_mask"]) == 1)[0]
-    #         """
-    #         TODO: Model training
+    #         observations, rewards, terminations, truncations, infos = env.step(actions)
             
-    #         Machine learning part should replace the following line to choose an 
-    #         action itself.
-    #         """
-    #         # Random choose a valid action
-    #         action = np.random.choice(valid_actions)
+    #         if any(terminations.values()):
+    #             print("Game", game, "Over")
+    #             game += 1
+    #             if game < GAME_COUNTDOWN:
+    #                 print()
+    #                 tick = 0
+    #                 obs = env.reset()
+    #                 continue
+    #             break
+
+    #         obs = observations
             
-    #         col = action//(8*74)
-    #         row = (action//74)%8
-    #         print(agent, "action index:", action)
-    #         # The coordination is a subjective perspective to the player side, 
-    #         # black side's position is mirrored vertically.
-    #         print("move (x = {}, y = {}, c = {})".format(col, row, action-(col*8+row)*74))
+    #         if env.unwrapped.render_mode != "human":
+    #             print(env.render())
+    #         print("tick:", tick)
+    #         print()
             
-    #         actions[agent] = action
-        
-        
-    #     observations, rewards, terminations, truncations, infos = env.step(actions)
-    #     obs = observations
-        
-    #     print(env.render())
-    #     print()
-        
-    #     count_down -= 1
-    #     if count_down == 0:
-    #         break
+    #         tick += 1
+    #         if tick == TICK_COUNTDOWN:
+    #             env.unwrapped.set_game_result(1)
+
+    #     env.close()
+
+    # except KeyboardInterrupt:
+    #     env.close()
