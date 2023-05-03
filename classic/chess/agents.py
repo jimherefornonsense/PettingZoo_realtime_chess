@@ -79,9 +79,6 @@ class Agents:
         if self.get_status(agent) == Status.MOVING:
             return None
         return self._agent_position[agent]["pos"]
-    
-    def is_captured(self, agent):
-        return agent not in self._agent_position
 
     def update_time(self):
         self.tick += 1

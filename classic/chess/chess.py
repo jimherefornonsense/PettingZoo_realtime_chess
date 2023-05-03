@@ -89,7 +89,6 @@ import numpy as np
 from gymnasium import spaces
 
 from pettingzoo import AECEnv
-from pettingzoo.utils.conversions import aec_to_parallel_wrapper
 from pettingzoo.utils import wrappers
 from pettingzoo.utils.agent_selector import agent_selector
 
@@ -100,19 +99,22 @@ from . import screen
 from mini_chess.mini_chess import MiniChess
 from .consts import *
 
-def env(render_mode=None):
+def env(is_parellel = False, render_mode = None):
     env = raw_env(render_mode=render_mode)
-    env = wrappers.TerminateIllegalWrapper(env, illegal_reward=-1)
+    # Since we gonna use action_mask to filter given actions, it should okay to turn it off, 
+    # because it conflicts with supersuit wrapper of using observe() for just return rgb array.
+    # env = wrappers.TerminateIllegalWrapper(env, illegal_reward=-1)
     env = wrappers.AssertOutOfBoundsWrapper(env)
     env = wrappers.OrderEnforcingWrapper(env)
-    # env = parellel_wrapper(env)
+    if is_parellel:
+        env = parellel_wrapper(env)
     return env
 
 
 class raw_env(AECEnv):
 
     metadata = {
-        "render_modes": ["human", "ansi", "rgb_array"],
+        "render_modes": ["ansi", "human", "rgb_array"],
         "name": "chess_rt",
         "is_parallelizable": True,
     }
@@ -125,42 +127,24 @@ class raw_env(AECEnv):
         self.agent_table = agents.Agents()
         self.agents = self.agent_table.get_list()
         self.possible_agents = self.agents[:]
-
         self._agent_selector = agent_selector(self.agents)
+
+        self.screen = screen.Screen(BOARD_COL, BOARD_ROW, self.agent_table.generate_agent_map())
         
         # Codes for all actions and the last code for passing the round
         self.code_of_passing = BOARD_COL * BOARD_ROW * TOTAL_MOVES
         self.action_spaces = {name: spaces.Discrete(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1) for name in self.agents}
         self.observation_spaces = {
-            name: spaces.Dict(
-                {
-                    "observation": spaces.Box(
-                        low=0, high=1, shape=(BOARD_COL, BOARD_ROW, 111), dtype=bool
-                    ),
-                    "action_mask": spaces.Box(
-                        low=0, high=1, shape=(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1,), dtype=np.int8
-                    ),
-                }
-            )
+            name: spaces.Box(low=0, high=255, shape=(self.screen.BOARD_SIZE[0], self.screen.BOARD_SIZE[1], 3), dtype=np.uint8,)
             for name in self.agents
         }
-
-        self.rewards = None
+        self.rewards = {name: 0 for name in self.agents}
         self.infos = {name: {} for name in self.agents}
         self.truncations = {name: False for name in self.agents}
         self.terminations = {name: False for name in self.agents}
-
         self.agent_selection = None
-        
-        self.board_history = np.zeros((BOARD_COL, BOARD_ROW, 104), dtype=bool)
-
-        assert render_mode is None or render_mode in self.metadata["render_modes"]
         self.render_mode = render_mode
-
-        self.screen = None
-        if self.render_mode in {"human", "rgb_array"}:
-            self.screen = screen.Screen(BOARD_COL, BOARD_ROW, self.agent_table.generate_agent_map())
-
+        
     def observation_space(self, agent):
         return self.observation_spaces[agent]
 
@@ -172,15 +156,12 @@ class raw_env(AECEnv):
 
     def observe(self, agent):
         self._set_color(agent)
-        
-        # observation = chess_utils.get_observation(
-        #     self.board, 1 if agent[:1] == 'B' else 0
-        # )
-        # observation = np.dstack((observation[:, :, :7], self.board_history))
-        
+        observation = None
         action_mask = np.zeros(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1, "int8")
         
-        if not self.agent_table.is_captured(agent):
+        if not self.truncations[agent]:
+            observation = self.screen.render("rgb_array")
+
             if self._is_piece_ready(agent):
                 legal_moves = chess_utils.legal_moves(self.board, self.agent_table.get_pos(agent))
                 for i in legal_moves:
@@ -188,30 +169,27 @@ class raw_env(AECEnv):
             else: 
                 action_mask[self.code_of_passing] = 1
 
-        return {"observation": None, "action_mask": action_mask}
+        self.infos[agent]["action_mask"] = action_mask
+        return observation 
 
     def reset(self, seed=None, return_info=False, options=None):
         self.has_reset = True
 
+        self.board = MiniChess(BOARD[:], MOVE_TIME)
+
         self.agent_table.reset()
         self.agents = self.agent_table.get_list()
-
-        self.board = MiniChess(BOARD[:], MOVE_TIME)
-        
         self._agent_selector = agent_selector(self.agents)
         self.agent_selection = self._agent_selector.reset()
+
+        self.screen.reset(self.agent_table.generate_agent_map())
+        self.screen.update_frame(self.agent_table.generate_agent_map(), MOVE_TIME)
 
         self.rewards = {name: 0 for name in self.agents}
         self._cumulative_rewards = {name: 0 for name in self.agents}
         self.terminations = {name: False for name in self.agents}
         self.truncations = {name: False for name in self.agents}
         self.infos = {name: {} for name in self.agents}
-
-        self.board_history = np.zeros((BOARD_COL, BOARD_ROW, 104), dtype=bool)
-
-        if self.render_mode == "human":
-            self.screen.reset(self.agent_table.generate_agent_map())
-            self.render()
             
     def _is_piece_ready(self, agent):
         return True if self.agent_table.get_status(agent) == agents.Status.IDLE else False
@@ -225,6 +203,8 @@ class raw_env(AECEnv):
             
             if captured_agent:
                 self._reward_capturing(agent, captured_agent)
+        
+        self.screen.update_frame(self.agent_table.generate_agent_map(), MOVE_TIME)
 
     def _reward_capturing(self, agent, captured_agent):
         coef = 1 if agent[:1] != captured_agent[:1] else -1
@@ -250,7 +230,6 @@ class raw_env(AECEnv):
             self.terminations[agent] = True
             if agent[:1] == color:
                 self.rewards[agent] = 10
-                # self.infos[name] = {"legal_moves": []}
 
     def step(self, action):
         if (
@@ -277,7 +256,6 @@ class raw_env(AECEnv):
             self._reward_winning(self.agent_selection[:1])
         
         # is_stale_or_checkmate = not any(next_legal_moves)
-        
 
         # claim draw is set to be true to align with normal tournament rules
 
@@ -286,25 +264,13 @@ class raw_env(AECEnv):
         # is_claimable_draw = is_repetition or is_50_move_rule
         # game_over = is_claimable_draw or is_stale_or_checkmate
 
-        # if game_over:
-            # result = self.board.result(claim_draw=True)
-            # result_val = chess_utils.result_to_int(result)
-            # self.set_game_result(result_val)
-
         self._accumulate_rewards()
+        # Reset the reward table for the next step
         self.rewards = {name: 0 for name in self.agents}
 
-        # Update board after applying action
-        # next_board = chess_utils.get_observation(self.board, self.agent_selection)
-        # self.board_history = np.dstack(
-        #     (next_board[:, :, 7:], self.board_history[:, :, :-13])
-        # )
         self.agent_selection = (
             self._agent_selector.next()
         )  # Give turn to the next agent
-        
-        if self.render_mode == "human":
-            self.render()
 
     def render(self):
         if self.render_mode is None:
@@ -314,18 +280,18 @@ class raw_env(AECEnv):
         elif self.render_mode == "ansi":
             return str(self.board)
         elif self.render_mode in {"human", "rgb_array"}:
-            return self.screen.render(self.render_mode, self.agent_table.generate_agent_map(), MOVE_TIME)
+            return self.screen.render(self.render_mode)
         else:
             raise ValueError(
                 f"{self.render_mode} is not a valid render mode. Available modes are: {self.metadata['render_modes']}"
             )
 
     def close(self):
-        if self.render_mode == "human":
+        if self.screen:
             self.screen.close()
 
-
-from collections import defaultdict, deque
+from collections import defaultdict
+from pettingzoo.utils.conversions import aec_to_parallel_wrapper
 
 class parellel_wrapper(aec_to_parallel_wrapper):
     def step(self, actions):

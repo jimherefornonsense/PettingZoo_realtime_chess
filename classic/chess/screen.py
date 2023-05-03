@@ -12,6 +12,7 @@ class Screen:
         self.row = row
         self.BOARD_SIZE = (400, 400)
         self.window_surface = None
+        self.display_surface = None
         self.clock = pygame.time.Clock()
         self.cell_size = (self.BOARD_SIZE[0] / col, self.BOARD_SIZE[1] / row)
         self.frame_count = 0
@@ -70,17 +71,23 @@ class Screen:
     def coord_map(self, x, y):
         y = self.row - y - 1 
         return (x * self.cell_size[0], y * self.cell_size[1])
+        
+    def update_pos(self, x, y, agent, move_time):
+        coord = self.coord_map(x, y)
+        if self.agent_next_pos[agent] != coord:
+            self.agent_next_pos[agent] = coord
+            self.update_delta_offset(agent, coord, move_time)
     
-    def render(self, mode, agent_map, move_time=None):
+    def update_delta_offset(self, agent, next_coord, move_time):
+        delta_x = (next_coord[0] - self.agent_data[agent]["rect"].x) / move_time
+        delta_y = (next_coord[1] - self.agent_data[agent]["rect"].y) / move_time
+        self.agent_data[agent]["dx"] = delta_x
+        self.agent_data[agent]["dy"] = delta_y
+
+    def update_frame(self, agent_map, move_time=None):
         if self.window_surface is None:
             pygame.init()
-
-            if mode == "human":
-                pygame.display.init()
-                pygame.display.set_caption("Chess")
-                self.window_surface = pygame.display.set_mode(self.BOARD_SIZE)
-            elif mode == "rgb_array":
-                self.window_surface = pygame.Surface(self.BOARD_SIZE)
+            self.window_surface = pygame.Surface(self.BOARD_SIZE)
 
         self.window_surface.blit(self.bg_image, (0, 0), (0,0, self.BOARD_SIZE[0], self.BOARD_SIZE[1]))
         
@@ -104,29 +111,23 @@ class Screen:
                 
             self.window_surface.blit(self.agent_data[agent]["img"], self.agent_data[agent]["rect"])
 
+    def render(self, mode):
         if mode == "human":
+            if not self.display_surface:
+                pygame.display.init()
+                pygame.display.set_caption("Chess")
+                self.display_surface = pygame.display.set_mode(self.BOARD_SIZE)
+
+            self.display_surface.blit(self.window_surface, (0, 0))
             pygame.event.pump()
             pygame.display.update()
             # Capture the current screen and save it as a PNG file
-            pygame.image.save(self.window_surface, f"{self.folder_path}/frame_{self.frame_count:03}.png")
+            pygame.image.save(self.display_surface, f"{self.folder_path}/frame_{self.frame_count:03}.png")
             self.frame_count += 1
-            # self.clock.tick(move_time)
         elif mode == "rgb_array":
             return np.transpose(
                 np.array(pygame.surfarray.pixels3d(self.window_surface)), axes=(1, 0, 2)
             )
-        
-    def update_pos(self, x, y, agent, move_time):
-        coord = self.coord_map(x, y)
-        if self.agent_next_pos[agent] != coord:
-            self.agent_next_pos[agent] = coord
-            self.update_delta_offset(agent, coord, move_time)
-    
-    def update_delta_offset(self, agent, next_coord, move_time):
-        delta_x = (next_coord[0] - self.agent_data[agent]["rect"].x) / move_time
-        delta_y = (next_coord[1] - self.agent_data[agent]["rect"].y) / move_time
-        self.agent_data[agent]["dx"] = delta_x
-        self.agent_data[agent]["dy"] = delta_y
     
     def close(self):
         print("bye!")
