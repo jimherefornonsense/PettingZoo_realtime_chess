@@ -6,7 +6,7 @@ import sys
 import numpy as np
 
 class Screen:
-    folder_path = "./screenshots"
+    folder_path = path.join(path.dirname(__file__), "..", "..", "screenshots")
     
     def __init__(self, col, row, agent_map):
         self.row = row
@@ -129,10 +129,11 @@ class Screen:
                 np.array(pygame.surfarray.pixels3d(self.window_surface)), axes=(1, 0, 2)
             )
     
-    def close(self):
+    def close(self, mode):
         print("bye!")
         pygame.quit()
-        sys.exit()
+        if mode == "human":
+            sys.exit()
         
 if __name__ == "__main__":
     # initialize pygame

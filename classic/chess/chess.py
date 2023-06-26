@@ -92,6 +92,7 @@ from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 from pettingzoo.utils.agent_selector import agent_selector
 
+from ..wrappers.terminate_illegal import TerminateIllegalWrapper
 from . import chess_utils
 from . import agents
 from . import screen
@@ -103,7 +104,7 @@ def env(is_parellel = False, render_mode = None):
     env = raw_env(render_mode=render_mode)
     # Since we gonna use action_mask to filter given actions, it should okay to turn it off, 
     # because it conflicts with supersuit wrapper of using observe() for just return rgb array.
-    # env = wrappers.TerminateIllegalWrapper(env, illegal_reward=-1)
+    env = TerminateIllegalWrapper(env, illegal_reward=-1)
     env = wrappers.AssertOutOfBoundsWrapper(env)
     env = wrappers.OrderEnforcingWrapper(env)
     if is_parellel:
@@ -128,6 +129,8 @@ class raw_env(AECEnv):
         self.agents = self.agent_table.get_list()
         self.possible_agents = self.agents[:]
         self._agent_selector = agent_selector(self.agents)
+        self._last_alive_agent = None
+        self._dead_step_initializer = None
 
         self.screen = screen.Screen(BOARD_COL, BOARD_ROW, self.agent_table.generate_agent_map())
         
@@ -150,18 +153,19 @@ class raw_env(AECEnv):
 
     def action_space(self, agent):
         return self.action_spaces[agent]
+
+    def action_mask_space(self, agent):
+        return self.action_mask_spaces[agent]
     
     def _set_color(self, agent):
         self.board.cur_color(agent[:1].lower())
 
     def observe(self, agent):
         self._set_color(agent)
-        observation = None
+        observation = self.screen.render("rgb_array")
         action_mask = np.zeros(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1, "int8")
         
-        if not self.truncations[agent]:
-            observation = self.screen.render("rgb_array")
-
+        if not (self.terminations[agent] or self.truncations[agent]):
             if self._is_piece_ready(agent):
                 legal_moves = chess_utils.legal_moves(self.board, self.agent_table.get_pos(agent))
                 for i in legal_moves:
@@ -171,6 +175,7 @@ class raw_env(AECEnv):
 
         self.infos[agent]["action_mask"] = action_mask
         return observation 
+        # return {"observation": observation, "action_mask": action_mask}
 
     def reset(self, seed=None, return_info=False, options=None):
         self.has_reset = True
@@ -181,6 +186,8 @@ class raw_env(AECEnv):
         self.agents = self.agent_table.get_list()
         self._agent_selector = agent_selector(self.agents)
         self.agent_selection = self._agent_selector.reset()
+        self._last_alive_agent = None
+        self._dead_step_initializer = None
 
         self.screen.reset(self.agent_table.generate_agent_map())
         self.screen.update_frame(self.agent_table.generate_agent_map(), MOVE_TIME)
@@ -203,6 +210,11 @@ class raw_env(AECEnv):
             
             if captured_agent:
                 self._reward_capturing(agent, captured_agent)
+
+            if captured_agent != self.agent_selection:
+                self._last_alive_agent = self.agent_selection
+        else:
+            self._last_alive_agent = self.agent_selection
         
         self.screen.update_frame(self.agent_table.generate_agent_map(), MOVE_TIME)
 
@@ -223,7 +235,7 @@ class raw_env(AECEnv):
             reward = 9
 
         self.rewards[agent] = reward * coef
-        self.truncations[captured_agent] = True
+        self.terminations[captured_agent] = True
 
     def _reward_winning(self, color):
         for agent in self.agents:
@@ -231,14 +243,37 @@ class raw_env(AECEnv):
             if agent[:1] == color:
                 self.rewards[agent] = 10
 
+    def _reset_next_agent(self):
+        agent_idx = self.agents.index(self._last_alive_agent)
+        self._agent_selector._current_agent = agent_idx+1
+
+    def _sync_next_agent(self):
+        self._reset_next_agent()
+        self.agent_selection = self._agent_selector.next()
+
     def step(self, action):
         if (
             self.terminations[self.agent_selection]
             or self.truncations[self.agent_selection]
         ):
-            self.agent_selection = self._agent_selector.next()
+            # In order to fit the mechanism of the env, which will gather all dead 
+            # agents and delete them each but then it still loops back to the first 
+            # deleted dead agent and causes KeyError, the checking point is to 
+            # ensure to skip the deleted agent and loop for the next alive agent.
+            #
+            # It's a hecky way to make the env to fit the need of the realtime 
+            # chess without modifying the source code.
+            if not self._dead_step_initializer:
+                self._dead_step_initializer = self.agent_selection
+
             print("Agent is dead")
             print()
+            self._was_dead_step(action)
+
+            if self._dead_step_initializer == self.agent_selection:
+                self._sync_next_agent()
+                self._dead_step_initializer = None
+
             return
         
         if action != self.code_of_passing:
@@ -288,7 +323,7 @@ class raw_env(AECEnv):
 
     def close(self):
         if self.screen:
-            self.screen.close()
+            self.screen.close(self.render_mode)
 
 from collections import defaultdict
 from pettingzoo.utils.conversions import aec_to_parallel_wrapper
@@ -309,10 +344,7 @@ class parellel_wrapper(aec_to_parallel_wrapper):
             truncations[agent] = truncation
             infos[agent] = info
             
-            if termination:
-                break
-
-            if truncation:
+            if termination or truncation:
                 self.aec_env.step(None)
                 visited.add(agent)
                 continue

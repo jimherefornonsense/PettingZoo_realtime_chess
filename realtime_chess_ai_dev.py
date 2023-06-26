@@ -8,23 +8,24 @@ Created on Mon Feb 27 14:03:57 2023
 
 import classic.chess_rt as chess
 import numpy as np
+import supersuit as ss
 
 GAME_COUNTDOWN = 1
-TICK_COUNTDOWN = 100
+TICK_COUNTDOWN = 300
 
 def aec(env):
-    env.reset(return_info=True)
+    env.reset()
     tick = 0
 
     for agent in env.agent_iter():
         print("this is the agent", agent)
         observation, reward, termination, truncation, info = env.last()
         
-        # Only terminate when one side has no piece left
-        if termination:
+        # Game over
+        if all(env.terminations.values()):
             break
-        # A piece is captured, it's truncated from alive agents
-        if truncation:
+        # A piece is captured, it's terminated/truncated from alive agents
+        if termination or truncation:
             env.step(None)
             continue
         
@@ -77,7 +78,7 @@ def parellel(env):
         
         observations, rewards, terminations, truncations, infos = env.step(actions)
         
-        if any(terminations.values()):
+        if all(terminations.values()):
             break
 
         obs = observations
@@ -96,6 +97,11 @@ if __name__ == "__main__":
     # create an environment
     is_parellel = False
     env = chess.env(is_parellel=is_parellel, render_mode='human')
+    # Preprocessing
+    # env = ss.color_reduction_v0(env, mode="full")
+    env = ss.dtype_v0(env, "float32")
+    env = ss.resize_v1(env, x_size=84, y_size=84)
+    env = ss.normalize_obs_v0(env, env_min=0, env_max=1)
     game = 0
     
     try:
