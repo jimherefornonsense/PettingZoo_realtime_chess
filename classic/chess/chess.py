@@ -266,8 +266,8 @@ class raw_env(AECEnv):
             if not self._dead_step_initializer:
                 self._dead_step_initializer = self.agent_selection
 
-            print("Agent is dead")
-            print()
+            # print("Agent is dead")
+            # print()
             self._was_dead_step(action)
 
             if self._dead_step_initializer == self.agent_selection:

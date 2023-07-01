@@ -126,7 +126,9 @@ class CNNModelV2(TorchModelV2, nn.Module):
                 action_mask = input_dict["infos"][-1]["action_mask"]
                 action_mask = np.expand_dims(action_mask, axis=0)
             if action_mask.any():
-                action_mask_tensor = torch.from_numpy(action_mask)
+                action_mask_tensor = action_mask
+                if isinstance(action_mask_tensor, np.ndarray):
+                    action_mask_tensor = torch.from_numpy(action_mask)
                 inf_mask = torch.clamp(torch.log(action_mask_tensor), -1e10, FLOAT_MAX)
                 policy_logits = inf_mask + policy_logits
         
@@ -135,8 +137,8 @@ class CNNModelV2(TorchModelV2, nn.Module):
     def value_function(self):
         return self._value_out.flatten()
     
-def env_creator():
-    env = chess.env(render_mode="rgb_array")
+def env_creator(render_mode):
+    env = chess.env(render_mode=render_mode)
     # Preprocessing [400, 400, 3]
     env = ss.dtype_v0(env, "float32")
     env = ss.resize_v1(env, x_size=84, y_size=84)
@@ -150,9 +152,9 @@ if __name__ == "__main__":
     ModelCatalog.register_custom_model("CNNModelV2", CNNModelV2)
 
     env_name = "chess_rt"
-    register_env(env_name, lambda config: PettingZooChessRtEnv(env_creator()))
+    register_env(env_name, lambda config: PettingZooChessRtEnv(env_creator("rgb_array")))
 
-    test_env = PettingZooChessRtEnv(env_creator())
+    test_env = PettingZooChessRtEnv(env_creator("rgb_array"))
     agent_ids = test_env.get_agent_ids()
     obs_space = test_env.observation_space
     act_space = test_env.action_space
@@ -175,9 +177,9 @@ if __name__ == "__main__":
             policy_mapping_fn=(lambda agent_id, *args, **kwargs: agent_id),
         )
         .resources(num_gpus=int(os.environ.get("RLLIB_NUM_GPUS", "0")))
-        .debugging(
-            log_level="DEBUG"
-        )
+        # .debugging(
+        #     log_level="DEBUG"
+        # )
         .framework(framework="torch")
         .exploration(
             exploration_config={
@@ -194,7 +196,7 @@ if __name__ == "__main__":
     tune.run(
         alg_name,
         name="DQN",
-        stop={"timesteps_total": 10000000},
+        stop={"timesteps_total": 20000},
         checkpoint_freq=10,
         config=config.to_dict(),
     )
