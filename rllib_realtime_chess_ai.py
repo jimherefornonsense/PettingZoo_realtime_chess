@@ -15,17 +15,17 @@ from ray.rllib.env import PettingZooEnv
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
-from ray.rllib.policy.sample_batch import SampleBatch
-from ray.rllib.policy.view_requirement import ViewRequirement
 from ray.rllib.utils.torch_utils import FLOAT_MAX
-from gymnasium import spaces
-import numpy as np
 import torch
 from torch import nn
 import supersuit as ss
-from ray.tune.logger import pretty_print
 
 import classic.chess_rt as chess
+
+import sys
+
+def eprint(*args, **kwargs):
+    print(*args, file=sys.stderr, **kwargs)
 
 from typing import Optional
 class PettingZooChessRtEnv(PettingZooEnv):
@@ -34,7 +34,7 @@ class PettingZooChessRtEnv(PettingZooEnv):
         self.counter = 0
 
     def step(self, action):
-        # print("turn:", self.env.agent_selection)
+        # eprint("turn:", self.env.agent_selection)
         self.env.step(action[self.env.agent_selection])
         obs_d = {}
         rew_d = {}
@@ -44,8 +44,8 @@ class PettingZooChessRtEnv(PettingZooEnv):
 
         while not all(self.env.terminations.values()):
             obs, rew, terminated, truncated, info = self.env.last()
-            # print("now:", self.env.agent_selection)
-            # print("terminated:",terminated)
+            # eprint("now:", self.env.agent_selection)
+            # eprint("terminated:",terminated)
             agent_id = self.env.agent_selection
             obs_d[agent_id] = obs
             rew_d[agent_id] = rew
@@ -65,17 +65,17 @@ class PettingZooChessRtEnv(PettingZooEnv):
 
 
         self.counter += 1
-        # print("counter: ", self.counter)
-        # print(rew_d, terminated_d)
-        # print("")
+        # eprint("counter: ", self.counter)
+        # eprint("")
 
         return obs_d, rew_d, terminated_d, truncated_d, info_d
     
     def reset(self, *, seed: Optional[int] = None, options: Optional[dict] = None):
-        self.env.reset(seed=seed, options=options)
+        info = self.env.reset(seed=seed, options=options)
+        obs = self.env.observe(self.env.agent_selection)
         return (
-            {self.env.agent_selection: self.env.observe(self.env.agent_selection)},
-            self.env.infos
+            {self.env.agent_selection: obs},
+            info or {},
         )
     
     def render(self):
@@ -86,12 +86,6 @@ class CNNModelV2(TorchModelV2, nn.Module):
         TorchModelV2.__init__(self, obs_space, act_space, act_space.n, *args, **kwargs)
         nn.Module.__init__(self)
 
-        self.view_requirements = {
-            SampleBatch.OBS: ViewRequirement(shift=0, space=self.obs_space),
-            SampleBatch.INFOS: ViewRequirement(shift=0, space=spaces.Dict(
-                {"action_mask": spaces.Box(low=0, high=1, shape=(act_space.n,), dtype=np.int8)}
-            ))
-        }
         # Define the CNN layers
         self.model = nn.Sequential(
             nn.Conv2d(3, 32, kernel_size=8, stride=4),
@@ -109,28 +103,19 @@ class CNNModelV2(TorchModelV2, nn.Module):
         self.value_fn = nn.Linear(512, 1)
 
     def forward(self, input_dict, state, seq_lens):
-        input_obs = input_dict["obs"]
+        input_obs = input_dict["obs"]["observation"]
         model_out = self.model(input_obs.permute(0, 3, 1, 2))
-        
         self._value_out = self.value_fn(model_out)
 
         # Get the policy logits from the policy_fn
         policy_logits = self.policy_fn(model_out)
-        
+
         # Apply the action mask
-        if "infos" in input_dict:
-            action_mask = None
-            if isinstance(input_dict["infos"], dict):
-                action_mask = input_dict["infos"]["action_mask"]
-            elif isinstance(input_dict["infos"], (list, np.ndarray)):
-                action_mask = input_dict["infos"][-1]["action_mask"]
-                action_mask = np.expand_dims(action_mask, axis=0)
-            if action_mask.any():
-                action_mask_tensor = action_mask
-                if isinstance(action_mask_tensor, np.ndarray):
-                    action_mask_tensor = torch.from_numpy(action_mask)
-                inf_mask = torch.clamp(torch.log(action_mask_tensor), -1e10, FLOAT_MAX)
-                policy_logits = inf_mask + policy_logits
+        action_mask = input_dict["obs"]["action_mask"]
+        if action_mask.any():
+            # action_mask_tensor = torch.from_numpy(action_mask)
+            inf_mask = torch.clamp(torch.log(action_mask), -1e10, FLOAT_MAX)
+            policy_logits = inf_mask + policy_logits
         
         return policy_logits, state
 
@@ -162,14 +147,13 @@ if __name__ == "__main__":
     config = (
         DQNConfig()
         .environment(env=env_name)
-        .rollouts(num_rollout_workers=1, rollout_fragment_length=20)
+        .rollouts(num_rollout_workers=1, rollout_fragment_length=20, preprocessor_pref=None)
         .training(
             train_batch_size=200,
             hiddens=[],
             dueling=False,
             model={
                 "custom_model": "CNNModelV2",
-                # "fcnet_hiddens": []
             },
         )
         .multi_agent(
@@ -186,7 +170,7 @@ if __name__ == "__main__":
                 # The Exploration class to use.
                 "type": "EpsilonGreedy",
                 # Config for the Exploration class' constructor:
-                "initial_epsilon": 0.0,
+                "initial_epsilon": 0.1,
                 "final_epsilon": 0.0,
                 "epsilon_timesteps": 100000,  # Timesteps over which to anneal epsilon.
             }
@@ -196,7 +180,7 @@ if __name__ == "__main__":
     tune.run(
         alg_name,
         name="DQN",
-        stop={"timesteps_total": 20000},
+        stop={"timesteps_total": 40000},
         checkpoint_freq=10,
         config=config.to_dict(),
     )

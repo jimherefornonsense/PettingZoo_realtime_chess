@@ -1,6 +1,4 @@
 import ray
-import os
-from ray.rllib.algorithms.dqn import DQNConfig
 from ray.rllib.algorithms.algorithm import Algorithm
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
@@ -29,7 +27,7 @@ def aec(env, DQNAgent):
             env.step(None)
             continue
 
-        action = DQNAgent.compute_single_action(observation=observation, info=info, policy_id=agent)
+        action = DQNAgent.compute_single_action(observation=observation, policy_id=agent)
 
         col = (action//41)%5
         row = action//(5*41)

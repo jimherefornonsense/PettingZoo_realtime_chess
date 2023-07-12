@@ -30,7 +30,7 @@ def aec(env):
             continue
         
         # Filter out invalid actions
-        valid_actions = np.where(np.array(info["action_mask"]) == 1)[0]
+        valid_actions = np.where(np.array(observation["action_mask"]) == 1)[0]
         
         # Random choose a valid action
         action = np.random.choice(valid_actions)

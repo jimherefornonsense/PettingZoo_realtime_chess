@@ -92,7 +92,6 @@ from pettingzoo import AECEnv
 from pettingzoo.utils import wrappers
 from pettingzoo.utils.agent_selector import agent_selector
 
-from ..wrappers.terminate_illegal import TerminateIllegalWrapper
 from . import chess_utils
 from . import agents
 from . import screen
@@ -102,9 +101,7 @@ from .consts import *
 
 def env(is_parellel = False, render_mode = None):
     env = raw_env(render_mode=render_mode)
-    # Since we gonna use action_mask to filter given actions, it should okay to turn it off, 
-    # because it conflicts with supersuit wrapper of using observe() for just return rgb array.
-    env = TerminateIllegalWrapper(env, illegal_reward=-1)
+    env = wrappers.TerminateIllegalWrapper(env, illegal_reward=-1)
     env = wrappers.AssertOutOfBoundsWrapper(env)
     env = wrappers.OrderEnforcingWrapper(env)
     if is_parellel:
@@ -138,7 +135,12 @@ class raw_env(AECEnv):
         self.code_of_passing = BOARD_COL * BOARD_ROW * TOTAL_MOVES
         self.action_spaces = {name: spaces.Discrete(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1) for name in self.agents}
         self.observation_spaces = {
-            name: spaces.Box(low=0, high=255, shape=(self.screen.BOARD_SIZE[0], self.screen.BOARD_SIZE[1], 3), dtype=np.uint8,)
+            name: spaces.Dict(
+                {
+                    "observation": spaces.Box(low=0, high=255, shape=(self.screen.BOARD_SIZE[0], self.screen.BOARD_SIZE[1], 3), dtype=np.uint8,),
+                    "action_mask": spaces.Box(low=0, high=1, shape=(BOARD_COL * BOARD_ROW * TOTAL_MOVES + 1,), dtype=np.int8)
+                }
+            )
             for name in self.agents
         }
         self.rewards = {name: 0 for name in self.agents}
@@ -153,9 +155,6 @@ class raw_env(AECEnv):
 
     def action_space(self, agent):
         return self.action_spaces[agent]
-
-    def action_mask_space(self, agent):
-        return self.action_mask_spaces[agent]
     
     def _set_color(self, agent):
         self.board.cur_color(agent[:1].lower())
@@ -173,9 +172,7 @@ class raw_env(AECEnv):
             else: 
                 action_mask[self.code_of_passing] = 1
 
-        self.infos[agent]["action_mask"] = action_mask
-        return observation 
-        # return {"observation": observation, "action_mask": action_mask}
+        return {"observation": observation, "action_mask": action_mask} 
 
     def reset(self, seed=None, return_info=False, options=None):
         self.has_reset = True
