@@ -172,17 +172,29 @@ if __name__ == "__main__":
                 # Config for the Exploration class' constructor:
                 "initial_epsilon": 0.1,
                 "final_epsilon": 0.0,
-                "epsilon_timesteps": 100000,  # Timesteps over which to anneal epsilon.
+                "epsilon_timesteps": 1000,  # Timesteps over which to anneal epsilon.
             }
         )
     )
 
-    tune.run(
+    analysis = tune.run(
         alg_name,
         name="DQN",
-        stop={"timesteps_total": 40000},
-        checkpoint_freq=10,
+        stop={"timesteps_total": 1000},
+        checkpoint_freq=1,
         config=config.to_dict(),
+        local_dir="ray_results/",
     )
+
+    # Get the checkpoint path and write it to checkoutpoint_path.txt
+    # list of lists: one list per checkpoint; each checkpoint list contains 1st the path, 2nd the metric value
+    checkpoints = analysis.get_trial_checkpoints_paths(trial=analysis.get_best_trial('episode_reward_mean'),
+                                                       metric='episode_reward_mean')
+    # retriev the checkpoint path; we only have a single checkpoint, so take the first one
+    checkpoint_path = checkpoints[0][0]
+    write_to = "./checkpoint_path.txt"
+    with open(write_to, 'w') as f:
+        relative_path = os.path.relpath(checkpoint_path, start=os.path.dirname(write_to))
+        f.write(f"{relative_path}\n")
 
     ray.shutdown()

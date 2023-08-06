@@ -4,7 +4,6 @@ from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from rllib_realtime_chess_ai import CNNModelV2, PettingZooChessRtEnv, env_creator
 
-CHECKPOINT_PATH = "/Users/zc/ray_results/DQN/DQN_chess_rt_69e8e_00000_0_2023-06-29_19-18-34/checkpoint_000020/"
 GAME_COUNTDOWN = 1
 TICK_COUNTDOWN = 300
 
@@ -54,12 +53,22 @@ def aec(env, DQNAgent):
 
 # This is for dev purpose.
 if __name__ == "__main__":
+    # Get checkpoint path from checkpoint_path.txt
+    checkpoint_path = ""
+    read_from = "checkpoint_path.txt"
+    with open(read_from, 'r') as f:
+        checkpoint_path = f.readline()
+        # Exit program if the path is empty
+        if checkpoint_path == "":
+            print("The checkpoint path doesn't exist.")
+            exit(1)
+
     ray.init()
     ModelCatalog.register_custom_model("CNNModelV2", CNNModelV2)
     env_name = "chess_rt"
     register_env(env_name, lambda config: PettingZooChessRtEnv(env_creator("human")))
     
-    DQNAgent = Algorithm.from_checkpoint(CHECKPOINT_PATH)
+    DQNAgent = Algorithm.from_checkpoint(checkpoint_path)
 
     # create an environment
     env = env_creator("human")

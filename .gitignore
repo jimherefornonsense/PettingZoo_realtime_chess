@@ -1,4 +1,7 @@
 screenshots/*.png
+ray_results/*
 .venv/
 __pycache__/
 .DS_Store
+.vscode/
+checkoutpoint_path.txt
