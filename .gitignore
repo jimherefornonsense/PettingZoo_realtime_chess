@@ -4,4 +4,4 @@ ray_results/*
 __pycache__/
 .DS_Store
 .vscode/
-checkoutpoint_path.txt
+# checkpoint_path.txt
