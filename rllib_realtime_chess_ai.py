@@ -15,7 +15,7 @@ from ray.rllib.env import PettingZooEnv
 from ray.rllib.models import ModelCatalog
 from ray.tune.registry import register_env
 from ray.rllib.models.torch.torch_modelv2 import TorchModelV2
-from ray.rllib.utils.torch_utils import FLOAT_MAX
+from ray.rllib.utils.torch_utils import FLOAT_MIN
 import torch
 from torch import nn
 import supersuit as ss
@@ -113,8 +113,7 @@ class CNNModelV2(TorchModelV2, nn.Module):
         # Apply the action mask
         action_mask = input_dict["obs"]["action_mask"]
         if action_mask.any():
-            # action_mask_tensor = torch.from_numpy(action_mask)
-            inf_mask = torch.clamp(torch.log(action_mask), -1e10, FLOAT_MAX)
+            inf_mask = torch.clamp(torch.log(action_mask), FLOAT_MIN, 0)
             policy_logits = inf_mask + policy_logits
         
         return policy_logits, state
@@ -172,7 +171,7 @@ if __name__ == "__main__":
                 # Config for the Exploration class' constructor:
                 "initial_epsilon": 0.1,
                 "final_epsilon": 0.0,
-                "epsilon_timesteps": 1000,  # Timesteps over which to anneal epsilon.
+                "epsilon_timesteps": 100000,  # Timesteps over which to anneal epsilon.
             }
         )
     )
@@ -180,8 +179,8 @@ if __name__ == "__main__":
     analysis = tune.run(
         alg_name,
         name="DQN",
-        stop={"timesteps_total": 1000},
-        checkpoint_freq=1,
+        stop={"timesteps_total": 100000},
+        checkpoint_freq=10,
         config=config.to_dict(),
         local_dir="ray_results/",
     )

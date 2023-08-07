@@ -57,7 +57,8 @@ if __name__ == "__main__":
     checkpoint_path = ""
     read_from = "checkpoint_path.txt"
     with open(read_from, 'r') as f:
-        checkpoint_path = f.readline()
+        checkpoint_path += f.readline()
+        checkpoint_path = checkpoint_path.strip()
         # Exit program if the path is empty
         if checkpoint_path == "":
             print("The checkpoint path doesn't exist.")
