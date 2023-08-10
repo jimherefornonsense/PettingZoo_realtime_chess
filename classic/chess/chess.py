@@ -284,8 +284,9 @@ class raw_env(AECEnv):
         # self.board.cur_color("b" if self.agent_selection[:1] == 'W' else "w")
         # next_legal_moves = chess_utils.legal_moves(self.board)
         
-        if self.board.has_won():
-            self._reward_winning(self.agent_selection[:1])
+        winner = self.board.has_winner()
+        if winner != None:
+            self._reward_winning("W" if winner == 0 else "B")
         
         # is_stale_or_checkmate = not any(next_legal_moves)
 
