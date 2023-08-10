@@ -48,8 +48,10 @@ This project is built upon the foundational work of PettingZoo and Ray RLlib, wh
 ## Additional Notes
 
 The idea is proposed by Dr. Tillquist at Chico State, which involves evolving decentralized real-time chess strategies.  
-This project is intended for research and educational purposes.  
-The decentralized chess modifications are inspired by Kungfu chess but are designed to create a unique gameplay experience.  
-Ray RLlib offers powerful tools for training and evaluating RL agents in various environments.  
+
+This project is intended for research and educational purposes.
+The decentralized chess modifications are inspired by Kungfu chess but are designed to create a unique gameplay experience.
+Ray RLlib offers powerful tools for training and evaluating RL agents in various environments.
+
 Chess env's drives is `realtime_chess_ai_dev.py`.  
 Change moving rate/board/cooldown time in `consts.py`.
